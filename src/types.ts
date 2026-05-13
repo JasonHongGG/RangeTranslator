@@ -47,6 +47,7 @@ export type RuntimeSnapshot = {
   statusDetail: string
   sourceLanguage: string
   targetLanguage: string
+  panelPinned: boolean
   selection: SelectionRect | null
   selectorBounds: SelectionRect | null
   copyMode: boolean

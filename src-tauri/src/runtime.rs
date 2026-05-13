@@ -163,6 +163,12 @@ impl SharedState {
         inner.snapshot.clone()
     }
 
+    pub fn set_panel_pinned(&self, enabled: bool) -> RuntimeSnapshot {
+        let mut inner = self.inner.lock();
+        inner.snapshot.panel_pinned = enabled;
+        inner.snapshot.clone()
+    }
+
     pub fn set_translation(&self, payload: TranslationPayload) -> RuntimeSnapshot {
         let mut inner = self.inner.lock();
         inner.snapshot.status = RuntimeStatus::Ready;

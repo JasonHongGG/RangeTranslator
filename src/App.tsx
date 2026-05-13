@@ -24,6 +24,7 @@ const PREVIEW_SNAPSHOT: RuntimeSnapshot = {
   statusDetail: 'Preview',
   sourceLanguage: 'auto',
   targetLanguage: 'zh-TW',
+  panelPinned: true,
   selection: { x: 280, y: 180, width: 764, height: 312 },
   selectorBounds: { x: 0, y: 0, width: 1280, height: 720 },
   copyMode: false,
@@ -363,7 +364,7 @@ function PanelView() {
     }
 
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'c') {
-      if (snapshot.blockCount === 0) {
+      if (!snapshot.selection) {
         return
       }
       event.preventDefault()
@@ -452,6 +453,22 @@ function PanelView() {
             <IconCrop />
           </button>
 
+          <button
+            type="button"
+            className={`panel-icon-button ${snapshot.panelPinned ? 'panel-icon-button-active' : ''}`}
+            title={snapshot.panelPinned ? 'Disable always on top' : 'Keep panel on top'}
+            aria-label={snapshot.panelPinned ? 'Disable always on top' : 'Keep panel on top'}
+            aria-pressed={snapshot.panelPinned}
+            disabled={busy}
+            onClick={() =>
+              runCommand(() =>
+                call('toggle_panel_pin', { enabled: !snapshot.panelPinned }),
+              )
+            }
+          >
+            <IconPin />
+          </button>
+
           <span className="panel-actions-divider" aria-hidden="true"></span>
 
           <button
@@ -515,20 +532,27 @@ function PanelView() {
           <button
             type="button"
             className={`footer-icon ${snapshot.copyMode ? 'footer-icon-active' : ''}`}
-            disabled={busy || snapshot.blockCount === 0}
-            aria-label="Toggle copy mode"
+            disabled={busy || !snapshot.selection}
+            title={snapshot.copyMode ? 'Enable mouse passthrough' : 'Disable mouse passthrough'}
+            aria-label={
+              snapshot.copyMode
+                ? 'Enable mouse passthrough'
+                : 'Disable mouse passthrough and allow overlay editing'
+            }
+            aria-pressed={snapshot.copyMode}
             onClick={() =>
               runCommand(() =>
                 call('toggle_copy_mode', { enabled: !snapshot.copyMode }),
               )
             }
           >
-            <IconCopy />
+            <IconPointer />
           </button>
           <button
             type="button"
             className="footer-icon"
             disabled={busy || !snapshot.selection}
+            title="Clear current region"
             aria-label="Clear selection"
             onClick={() => runCommand(() => call('clear_selection'))}
           >
@@ -545,7 +569,15 @@ function PanelView() {
 }
 
 function SelectorView() {
-  const [origin, setOrigin] = useState(() => selectorOrigin())
+  const [selectorBounds, setSelectorBounds] = useState<SelectionRect>(() => {
+    const origin = selectorOrigin()
+    return {
+      x: origin.x,
+      y: origin.y,
+      width: Math.max(window.innerWidth, 1),
+      height: Math.max(window.innerHeight, 1),
+    }
+  })
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null)
   const [current, setCurrent] = useState<{ x: number; y: number } | null>(null)
   const [lastDebugLine, setLastDebugLine] = useState('Selector mounted')
@@ -607,10 +639,7 @@ function SelectorView() {
       void call<RuntimeSnapshot>('get_runtime_snapshot')
         .then((snapshot) => {
           if (snapshot.selectorBounds) {
-            setOrigin({
-              x: snapshot.selectorBounds.x,
-              y: snapshot.selectorBounds.y,
-            })
+            setSelectorBounds(snapshot.selectorBounds)
             writeLocalDebug('selector-ui', 'loaded selector bounds from runtime', {
               selectorBounds: snapshot.selectorBounds,
             })
@@ -631,10 +660,7 @@ function SelectorView() {
           return
         }
 
-        setOrigin({
-          x: snapshot.selectorBounds.x,
-          y: snapshot.selectorBounds.y,
-        })
+        setSelectorBounds(snapshot.selectorBounds)
         writeLocalDebug('selector-ui', 'runtime snapshot updated selector bounds', {
           selectorBounds: snapshot.selectorBounds,
         })
@@ -644,7 +670,7 @@ function SelectorView() {
     }
 
     writeLocalDebug('selector-ui', 'mounted', {
-      origin,
+      selectorBounds,
       hash: window.location.hash,
       search: window.location.search,
       viewport: {
@@ -729,7 +755,7 @@ function SelectorView() {
       window.removeEventListener('keydown', onKeyDown, true)
       document.removeEventListener('keydown', onKeyDown, true)
     }
-  }, [origin, requestSelectorCancel, selectorWindow])
+  }, [requestSelectorCancel, selectorBounds, selectorWindow])
 
   const submitSelection = async (nextSelection: SelectionRect | null) => {
     if (!nextSelection || nextSelection.width < 24 || nextSelection.height < 24) {
@@ -746,16 +772,26 @@ function SelectorView() {
 
     lifecycleBusyRef.current = true
 
+    const viewportWidth = Math.max(window.innerWidth, 1)
+    const viewportHeight = Math.max(window.innerHeight, 1)
+    const scaleX = selectorBounds.width / viewportWidth
+    const scaleY = selectorBounds.height / viewportHeight
+
     const absoluteSelection = {
-      x: origin.x + nextSelection.x,
-      y: origin.y + nextSelection.y,
-      width: nextSelection.width,
-      height: nextSelection.height,
+      x: selectorBounds.x + Math.round(nextSelection.x * scaleX),
+      y: selectorBounds.y + Math.round(nextSelection.y * scaleY),
+      width: Math.round(nextSelection.width * scaleX),
+      height: Math.round(nextSelection.height * scaleY),
     } satisfies SelectionRect
 
     writeLocalDebug('selector-ui', 'submitting selection', {
       localSelection: nextSelection,
       absoluteSelection,
+      scaleX,
+      scaleY,
+      selectorBounds,
+      viewportWidth,
+      viewportHeight,
     })
 
     try {
@@ -871,7 +907,7 @@ function SelectorView() {
       <aside className="selector-debug-banner">
         <strong className="selector-debug-title">Selector Debug</strong>
         <span className="selector-debug-copy">
-          window={currentWindowLabel} view={injectedView} origin={origin.x},{origin.y}
+          window={currentWindowLabel} view={injectedView} origin={selectorBounds.x},{selectorBounds.y}
         </span>
         <span className="selector-debug-copy">{lastDebugLine}</span>
       </aside>
@@ -898,9 +934,11 @@ function SelectorView() {
 function OverlayView() {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
   const [translation, setTranslation] = useState<TranslationPayload>(PREVIEW_TRANSLATION)
+  const [overlayScale, setOverlayScale] = useState(1)
   const deferredBlocks = useDeferredValue(translation.blocks)
   const overlayWindow = useMemo(() => (isTauri() ? getCurrentWindow() : null), [])
   const boundsRef = useRef<SelectionRect | null>(PREVIEW_SNAPSHOT.selection)
+  const overlayBoundsSyncArmedRef = useRef(false)
 
   const syncSnapshot = useEffectEvent((next: RuntimeSnapshot) => {
     startTransition(() => {
@@ -919,15 +957,18 @@ function OverlayView() {
   }, [snapshot.selection])
 
   const syncOverlayBounds = useEffectEvent(async () => {
-    if (!overlayWindow || !isTauri()) {
+    if (!overlayWindow || !isTauri() || !snapshot.copyMode) {
       return
     }
 
     try {
-      const [position, size] = await Promise.all([
+      const [position, size, scaleFactor] = await Promise.all([
         overlayWindow.innerPosition(),
         overlayWindow.innerSize(),
+        overlayWindow.scaleFactor(),
       ])
+
+      setOverlayScale(scaleFactor)
 
       const nextSelection = {
         x: Math.round(position.x),
@@ -957,14 +998,23 @@ function OverlayView() {
     let stopped = false
     const bootstrap = async () => {
       try {
-        const [nextSnapshot, nextTranslation] = await Promise.all([
+        const requests: Array<Promise<unknown>> = [
           call<RuntimeSnapshot>('get_runtime_snapshot'),
           call<TranslationPayload>('get_latest_translation'),
-        ])
+        ]
+
+        if (overlayWindow) {
+          requests.push(readWindowScale(overlayWindow))
+        }
+
+        const [nextSnapshot, nextTranslation, nextScale] = await Promise.all(requests)
 
         if (!stopped) {
-          setSnapshot(nextSnapshot)
-          setTranslation(nextTranslation)
+          setSnapshot(nextSnapshot as RuntimeSnapshot)
+          setTranslation(nextTranslation as TranslationPayload)
+          if (typeof nextScale === 'number') {
+            setOverlayScale(nextScale)
+          }
         }
       } catch {
         // Overlay keeps the preview payload when the backend is not ready yet.
@@ -994,22 +1044,36 @@ function OverlayView() {
   }, [])
 
   useEffect(() => {
-    if (!overlayWindow || !isTauri()) {
+    if (!overlayWindow || !isTauri() || !snapshot.copyMode) {
+      overlayBoundsSyncArmedRef.current = false
       return
     }
 
     let detachMoved = () => {}
     let detachResized = () => {}
     let syncTimer: number | null = null
+    let settleTimer: number | null = null
 
     const queueSync = () => {
+      if (!overlayBoundsSyncArmedRef.current) {
+        return
+      }
+
       if (syncTimer !== null) {
         window.clearTimeout(syncTimer)
       }
 
+      if (settleTimer !== null) {
+        window.clearTimeout(settleTimer)
+      }
+
       syncTimer = window.setTimeout(() => {
         void syncOverlayBounds()
-      }, 120)
+      }, 80)
+
+      settleTimer = window.setTimeout(() => {
+        overlayBoundsSyncArmedRef.current = false
+      }, 260)
     }
 
     void overlayWindow.onMoved(() => {
@@ -1028,13 +1092,17 @@ function OverlayView() {
       if (syncTimer !== null) {
         window.clearTimeout(syncTimer)
       }
+      if (settleTimer !== null) {
+        window.clearTimeout(settleTimer)
+      }
       detachMoved()
       detachResized()
+      overlayBoundsSyncArmedRef.current = false
     }
-  }, [overlayWindow, syncOverlayBounds])
+  }, [overlayWindow, snapshot.copyMode, syncOverlayBounds])
 
   const startOverlayDrag = async (event: React.PointerEvent<HTMLElement>) => {
-    if (!overlayWindow || event.button !== 0 || snapshot.copyMode) {
+    if (!overlayWindow || event.button !== 0 || !snapshot.copyMode) {
       return
     }
 
@@ -1044,6 +1112,7 @@ function OverlayView() {
     }
 
     try {
+      overlayBoundsSyncArmedRef.current = true
       await overlayWindow.startDragging()
     } catch {
       // Ignore drag rejections from edge cases like rapid resize gestures.
@@ -1053,7 +1122,7 @@ function OverlayView() {
   const startOverlayResize = (direction: ResizeDirection) => async (
     event: React.PointerEvent<HTMLButtonElement>,
   ) => {
-    if (!overlayWindow || event.button !== 0) {
+    if (!overlayWindow || event.button !== 0 || !snapshot.copyMode) {
       return
     }
 
@@ -1061,6 +1130,7 @@ function OverlayView() {
     event.stopPropagation()
 
     try {
+      overlayBoundsSyncArmedRef.current = true
       await overlayWindow.startResizeDragging(direction)
     } catch {
       // Ignore resize rejections from unsupported host edge cases.
@@ -1069,9 +1139,7 @@ function OverlayView() {
 
   return (
     <div
-      className={`overlay-page overlay-interactive ${
-        snapshot.copyMode ? 'overlay-copy-mode' : ''
-      }`}
+      className={`overlay-page ${snapshot.copyMode ? 'overlay-interactive overlay-copy-mode' : 'overlay-passive'}`}
       onPointerDown={startOverlayDrag}
     >
       {PANEL_RESIZE_HANDLES.map((handle) => (
@@ -1093,8 +1161,8 @@ function OverlayView() {
       </div>
 
       <div className="overlay-meta">
-        <span className={`overlay-mode ${snapshot.copyMode ? 'overlay-mode-live' : ''}`}>
-          {snapshot.copyMode ? 'COPY' : 'LIVE'}
+        <span className={`overlay-mode ${snapshot.copyMode ? 'overlay-mode-edit' : 'overlay-mode-pass'}`}>
+          {snapshot.copyMode ? 'EDIT' : 'PASS'}
         </span>
       </div>
 
@@ -1102,14 +1170,15 @@ function OverlayView() {
         <article
           key={block.id}
           className={`overlay-block overlay-block-${block.align}`}
+          data-no-drag="true"
           style={{
-            left: block.x,
-            top: block.y,
-            width: block.width,
-            minHeight: block.height,
+            left: toLogicalPixels(block.x, overlayScale),
+            top: toLogicalPixels(block.y, overlayScale),
+            width: toLogicalPixels(block.width, overlayScale),
+            minHeight: Math.max(18, toLogicalPixels(block.height, overlayScale)),
             color: block.foreground,
             background: withAlpha(block.background, 0.76),
-            fontSize: block.fontSize,
+            fontSize: Math.max(12, block.fontSize / Math.max(overlayScale, 1)),
           }}
         >
           {block.translatedText}
@@ -1234,6 +1303,24 @@ function sameSelection(
     left.width === right.width &&
     left.height === right.height
   )
+}
+
+function toLogicalPixels(value: number, scaleFactor: number) {
+  return value / Math.max(scaleFactor, 1)
+}
+
+async function readWindowScale(
+  appWindow: ReturnType<typeof getCurrentWindow> | null,
+) {
+  if (!appWindow || !isTauri()) {
+    return 1
+  }
+
+  try {
+    return await appWindow.scaleFactor()
+  } catch {
+    return 1
+  }
 }
 
 function shouldIgnoreWindowDrag(target: HTMLElement) {
@@ -1419,11 +1506,21 @@ function IconPause() {
   )
 }
 
-function IconCopy() {
+function IconPointer() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M9 9h9v11H9z" />
-      <path d="M6 15H5V4h9v2" />
+      <path d="m6 4 7 7-3 1 2.5 5.5-2 1L8 13l-2 3Z" />
+      <path d="M14.5 5.5h3M17 4v3M15.4 8.6l2.1 2.1" />
+    </svg>
+  )
+}
+
+function IconPin() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 4h6" />
+      <path d="M10 4v5l-3 3h10l-3-3V4" />
+      <path d="M12 12v8" />
     </svg>
   )
 }

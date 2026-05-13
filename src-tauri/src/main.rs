@@ -62,6 +62,32 @@ fn panel_minimize(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn toggle_panel_pin(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window("panel")
+        .context("panel window missing")
+        .map_err(error_to_string)?;
+
+    window.set_always_on_top(enabled).map_err(error_to_string)?;
+
+    let snapshot = state.set_panel_pinned(enabled);
+    emit_debug(
+        &app,
+        "panel-backend",
+        "panel pin toggled",
+        json!({
+            "enabled": enabled,
+        }),
+    );
+    emit_snapshot(&app, &snapshot);
+    Ok(())
+}
+
+#[tauri::command]
 fn panel_close(app: AppHandle, state: State<'_, SharedState>) -> Result<(), String> {
     emit_debug(
         &app,
@@ -188,9 +214,10 @@ async fn open_selector_window(
                 .skip_taskbar(true)
                 .resizable(false)
                 .shadow(false)
+                .visible(false)
                 .focused(true)
-                .position(window_x as f64, window_y as f64)
-                .inner_size(window_width as f64, window_height as f64);
+                .position(0.0, 0.0)
+                .inner_size(120.0, 80.0);
 
             let window = match builder.build() {
                 Ok(window) => window,
@@ -221,6 +248,13 @@ async fn open_selector_window(
                     "debugWindowMode": debug_window_mode,
                 }),
             );
+
+            window
+                .set_position(Position::Physical(PhysicalPosition::new(window_x, window_y)))
+                .map_err(error_to_string)?;
+            window
+                .set_size(Size::Physical(PhysicalSize::new(window_width, window_height)))
+                .map_err(error_to_string)?;
 
             if let Err(error) = window.set_ignore_cursor_events(false) {
                 let message = error_to_string(error);
@@ -338,7 +372,7 @@ async fn submit_selection(
         target_language: snapshot_before.target_language,
     };
 
-    ensure_overlay_window(&app, &selection).await?;
+    ensure_overlay_window(&app, &selection, snapshot_before.copy_mode).await?;
 
     let snapshot = state.set_selection(selection);
     emit_debug(
@@ -396,7 +430,7 @@ async fn start_pipeline(
         .context("Select a region before starting")
         .map_err(error_to_string)?;
 
-    ensure_overlay_window(&app, &selection).await?;
+    ensure_overlay_window(&app, &selection, state.snapshot().copy_mode).await?;
     begin_pipeline(&app, state.inner_clone(), settings);
 
     Ok(())
@@ -408,6 +442,18 @@ fn update_overlay_selection(
     state: State<'_, SharedState>,
     selection: SelectionRect,
 ) -> Result<(), String> {
+    if !state.snapshot().copy_mode {
+        emit_debug(
+            &app,
+            "overlay-backend",
+            "ignored overlay selection update while passive",
+            json!({
+                "selection": selection,
+            }),
+        );
+        return Ok(());
+    }
+
     emit_debug(
         &app,
         "overlay-backend",
@@ -575,6 +621,7 @@ async fn pipeline_loop(
 async fn ensure_overlay_window(
     app: &AppHandle,
     selection: &SelectionRect,
+    interactive: bool,
 ) -> Result<(), String> {
     use tokio::sync::oneshot;
 
@@ -606,10 +653,12 @@ async fn ensure_overlay_window(
                     )))
                     .map_err(error_to_string)?;
                 window
-                    .set_ignore_cursor_events(false)
+                    .set_ignore_cursor_events(!interactive)
                     .map_err(error_to_string)?;
                 window.show().map_err(error_to_string)?;
-                window.set_focus().map_err(error_to_string)?;
+                if interactive {
+                    window.set_focus().map_err(error_to_string)?;
+                }
                 return Ok(());
             }
 
@@ -626,15 +675,33 @@ async fn ensure_overlay_window(
             .skip_taskbar(true)
             .resizable(true)
             .shadow(false)
-            .focused(true)
-            .position(selection.x as f64, selection.y as f64)
-            .inner_size(selection.width as f64, selection.height as f64)
+            .visible(false)
+            .focused(interactive)
+            .position(0.0, 0.0)
+            .inner_size(120.0, 80.0)
             .build()
             .map_err(error_to_string)?;
 
             window
-                .set_ignore_cursor_events(false)
+                .set_position(Position::Physical(PhysicalPosition::new(
+                    selection.x,
+                    selection.y,
+                )))
                 .map_err(error_to_string)?;
+            window
+                .set_size(Size::Physical(PhysicalSize::new(
+                    selection.width,
+                    selection.height,
+                )))
+                .map_err(error_to_string)?;
+
+            window
+                .set_ignore_cursor_events(!interactive)
+                .map_err(error_to_string)?;
+            window.show().map_err(error_to_string)?;
+            if interactive {
+                window.set_focus().map_err(error_to_string)?;
+            }
             Ok(())
         })();
 
@@ -727,7 +794,12 @@ fn main() {
 
     tauri::Builder::default()
         .manage(state)
-        .setup(|_app| Ok(()))
+        .setup(|app| {
+            if let Some(window) = app.get_webview_window("panel") {
+                window.set_always_on_top(true)?;
+            }
+            Ok(())
+        })
         .on_window_event(|window, event| {
             if window.label() == "selector" {
                 match event {
@@ -799,6 +871,7 @@ fn main() {
             open_selector_window,
             panel_close,
             panel_minimize,
+            toggle_panel_pin,
             start_pipeline,
             stop_pipeline,
             submit_selection,
