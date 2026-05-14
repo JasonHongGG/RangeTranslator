@@ -22,6 +22,15 @@ pub enum TextAlign {
     Right,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PartialUpdateStage {
+    #[default]
+    Ocr,
+    Translation,
+    Complete,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SelectionRect {
@@ -55,6 +64,7 @@ pub struct OverlayBlock {
     pub foreground: String,
     pub background: String,
     pub align: TextAlign,
+    pub streaming: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +76,8 @@ pub struct TranslationPayload {
     pub detected_source: Option<String>,
     pub captured_at: Option<String>,
     pub unchanged: bool,
+    pub provider: String,
+    pub prompt_profile: String,
     pub blocks: Vec<OverlayBlock>,
 }
 
@@ -78,9 +90,135 @@ impl Default for TranslationPayload {
             detected_source: None,
             captured_at: None,
             unchanged: false,
+            provider: "ollama".to_string(),
+            prompt_profile: "translation.ui_overlay.default".to_string(),
             blocks: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslationPartialPayload {
+    pub selection: Option<SelectionRect>,
+    pub source_language: String,
+    pub target_language: String,
+    pub detected_source: Option<String>,
+    pub captured_at: Option<String>,
+    pub provider: String,
+    pub prompt_profile: String,
+    pub stage: PartialUpdateStage,
+    pub complete: bool,
+    pub blocks: Vec<OverlayBlock>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderDescriptor {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+    pub available: bool,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptProfileDescriptor {
+    pub id: String,
+    pub label: String,
+    pub version: String,
+    pub task: String,
+    pub provider_family: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeCapabilities {
+    pub ocr_providers: Vec<ProviderDescriptor>,
+    pub ai_providers: Vec<ProviderDescriptor>,
+    pub prompt_profiles: Vec<PromptProfileDescriptor>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AiTranslationRequest {
+    pub endpoint: String,
+    pub provider_id: String,
+    pub model: String,
+    pub prompt_profile: String,
+    pub source_language: String,
+    pub target_language: String,
+    pub texts: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AiTranslationResponse {
+    pub provider_id: String,
+    pub model: String,
+    pub prompt_profile: String,
+    pub detected_source: String,
+    pub translations: Vec<String>,
+    pub confidences: Vec<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AiTranslationDelta {
+    pub index: usize,
+    pub provider_id: String,
+    pub model: String,
+    pub prompt_profile: String,
+    pub detected_source: Option<String>,
+    pub translated_text: String,
+    pub confidence: Option<f32>,
+    pub done: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BenchmarkCase {
+    pub id: String,
+    pub description: String,
+    pub source_language: String,
+    pub target_language: String,
+    pub texts: Vec<String>,
+    pub expected_translations: Vec<String>,
+    pub prompt_profile: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BenchmarkSuite {
+    pub id: String,
+    pub version: String,
+    pub title: String,
+    pub cases: Vec<BenchmarkCase>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BenchmarkCaseResult {
+    pub case_id: String,
+    pub prompt_profile: String,
+    pub provider_id: String,
+    pub expected_translations: Vec<String>,
+    pub actual_translations: Vec<String>,
+    pub exact_match_score: f32,
+    pub latency_ms: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BenchmarkReport {
+    pub suite_id: String,
+    pub provider_id: String,
+    pub prompt_profile: String,
+    pub case_count: usize,
+    pub average_exact_match_score: f32,
+    pub average_latency_ms: f32,
+    pub cases: Vec<BenchmarkCaseResult>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +229,9 @@ pub struct RuntimeSnapshot {
     pub status_detail: String,
     pub source_language: String,
     pub target_language: String,
+    pub ocr_provider: String,
+    pub ai_provider: String,
+    pub prompt_profile: String,
     pub panel_pinned: bool,
     pub selection: Option<SelectionRect>,
     pub selector_bounds: Option<SelectionRect>,
@@ -118,6 +259,9 @@ impl Default for RuntimeSnapshot {
             status_detail: "Ready".to_string(),
             source_language: "auto".to_string(),
             target_language: "zh-TW".to_string(),
+            ocr_provider: "windows-native".to_string(),
+            ai_provider: "ollama".to_string(),
+            prompt_profile: "translation.ui_overlay.default".to_string(),
             panel_pinned: true,
             selection: None,
             selector_bounds: None,

@@ -1,25 +1,67 @@
 use anyhow::{anyhow, Context, Result};
 
-use crate::{
-    capture::CapturedFrame,
-    models::PixelRect,
-};
+use super::{OcrProvider, OcrResult, OcrTextLine};
+use crate::capture::CapturedFrame;
+use crate::models::PixelRect;
 
-#[derive(Debug, Clone)]
-pub struct OcrTextLine {
-    pub text: String,
-    pub rect: PixelRect,
-    pub confidence: f32,
+#[cfg(windows)]
+pub struct WindowsOcrProvider;
+
+#[cfg(not(windows))]
+pub struct UnsupportedOcrProvider;
+
+#[cfg(windows)]
+impl OcrProvider for WindowsOcrProvider {
+    fn id(&self) -> &'static str {
+        "windows-native"
+    }
+
+    fn label(&self) -> &'static str {
+        "Windows OCR"
+    }
+
+    fn recognize(
+        &self,
+        frame: &CapturedFrame,
+        requested_source: &str,
+        hint: Option<&str>,
+    ) -> Result<OcrResult> {
+        recognize_capture(frame, requested_source, hint)
+    }
 }
 
-#[derive(Debug, Clone)]
-pub struct OcrResult {
-    pub language: String,
-    pub lines: Vec<OcrTextLine>,
+#[cfg(not(windows))]
+impl OcrProvider for UnsupportedOcrProvider {
+    fn id(&self) -> &'static str {
+        "unsupported"
+    }
+
+    fn label(&self) -> &'static str {
+        "Unavailable OCR"
+    }
+
+    fn recognize(
+        &self,
+        frame: &CapturedFrame,
+        requested_source: &str,
+        hint: Option<&str>,
+    ) -> Result<OcrResult> {
+        recognize_capture(frame, requested_source, hint)
+    }
+
+    fn descriptor(&self) -> ProviderDescriptor {
+        crate::models::ProviderDescriptor {
+            id: self.id().to_string(),
+            label: self.label().to_string(),
+            kind: "ocr".to_string(),
+            available: false,
+            detail: Some("Windows OCR is only available on Windows hosts".to_string()),
+        }
+    }
 }
 
 #[cfg(windows)]
-pub fn recognize_capture(
+fn recognize_capture(
     frame: &CapturedFrame,
     requested_source: &str,
     hint: Option<&str>,
@@ -69,15 +111,13 @@ pub fn recognize_capture(
     }
 
     fn score(lines: &[OcrTextLine]) -> usize {
-        lines.iter()
+        lines
+            .iter()
             .map(|line| line.text.chars().filter(|ch| !ch.is_whitespace()).count())
             .sum()
     }
 
-    fn recognize_with_language(
-        bitmap: &SoftwareBitmap,
-        tag: &str,
-    ) -> Result<Vec<OcrTextLine>> {
+    fn recognize_with_language(bitmap: &SoftwareBitmap, tag: &str) -> Result<Vec<OcrTextLine>> {
         let language = Language::CreateLanguage(&HSTRING::from(tag))
             .context("failed to create WinRT OCR language")?;
         let engine = OcrEngine::TryCreateFromLanguage(&language)
@@ -90,10 +130,7 @@ pub fn recognize_capture(
 
         let mut lines = Vec::new();
         for line in result.Lines().context("failed to enumerate OCR lines")? {
-            let text = line
-                .Text()
-                .context("failed to read OCR line text")?
-                .to_string();
+            let text = line.Text().context("failed to read OCR line text")?.to_string();
             let text = text.trim().to_string();
             if text.is_empty() {
                 continue;
@@ -180,12 +217,13 @@ pub fn recognize_capture(
         }
     }
 
-    let (language, lines, _) = best.ok_or_else(|| anyhow!("Windows OCR returned no usable result"))?;
+    let (language, lines, _) =
+        best.ok_or_else(|| anyhow!("Windows OCR returned no usable result"))?;
     Ok(OcrResult { language, lines })
 }
 
 #[cfg(not(windows))]
-pub fn recognize_capture(
+fn recognize_capture(
     _frame: &CapturedFrame,
     _requested_source: &str,
     _hint: Option<&str>,

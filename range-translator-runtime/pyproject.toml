@@ -1,0 +1,12 @@
+[project]
+name = "range-translator-runtime"
+version = "0.1.0"
+description = "Persistent sidecar runtime for RangeTranslator OCR and AI providers"
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["range_translator_runtime*"]

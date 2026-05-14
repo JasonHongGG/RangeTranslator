@@ -8,6 +8,7 @@ export type RuntimeStatus =
   | 'error'
 
 export type TextAlign = 'left' | 'center' | 'right'
+export type PartialUpdateStage = 'ocr' | 'translation' | 'complete'
 
 export type SelectionRect = {
   x: number
@@ -29,6 +30,7 @@ export type OverlayBlock = {
   foreground: string
   background: string
   align: TextAlign
+  streaming: boolean
 }
 
 export type TranslationPayload = {
@@ -38,7 +40,64 @@ export type TranslationPayload = {
   detectedSource: string | null
   capturedAt: string | null
   unchanged: boolean
+  provider: string
+  promptProfile: string
   blocks: OverlayBlock[]
+}
+
+export type TranslationPartialPayload = {
+  selection: SelectionRect | null
+  sourceLanguage: string
+  targetLanguage: string
+  detectedSource: string | null
+  capturedAt: string | null
+  provider: string
+  promptProfile: string
+  stage: PartialUpdateStage
+  complete: boolean
+  blocks: OverlayBlock[]
+}
+
+export type ProviderDescriptor = {
+  id: string
+  label: string
+  kind: string
+  available: boolean
+  detail: string | null
+}
+
+export type PromptProfileDescriptor = {
+  id: string
+  label: string
+  version: string
+  task: string
+  providerFamily: string
+}
+
+export type RuntimeCapabilities = {
+  ocrProviders: ProviderDescriptor[]
+  aiProviders: ProviderDescriptor[]
+  promptProfiles: PromptProfileDescriptor[]
+}
+
+export type BenchmarkCaseResult = {
+  caseId: string
+  promptProfile: string
+  providerId: string
+  expectedTranslations: string[]
+  actualTranslations: string[]
+  exactMatchScore: number
+  latencyMs: number
+}
+
+export type BenchmarkReport = {
+  suiteId: string
+  providerId: string
+  promptProfile: string
+  caseCount: number
+  averageExactMatchScore: number
+  averageLatencyMs: number
+  cases: BenchmarkCaseResult[]
 }
 
 export type RuntimeSnapshot = {
@@ -47,6 +106,9 @@ export type RuntimeSnapshot = {
   statusDetail: string
   sourceLanguage: string
   targetLanguage: string
+  ocrProvider: string
+  aiProvider: string
+  promptProfile: string
   panelPinned: boolean
   selection: SelectionRect | null
   selectorBounds: SelectionRect | null

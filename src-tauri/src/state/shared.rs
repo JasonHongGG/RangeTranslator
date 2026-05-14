@@ -3,7 +3,9 @@ use std::sync::Arc;
 use chrono::{SecondsFormat, Utc};
 use parking_lot::Mutex;
 
-use crate::models::{PipelineSettings, RuntimeSnapshot, RuntimeStatus, SelectionRect, TranslationPayload};
+use crate::models::{
+    PipelineSettings, RuntimeSnapshot, RuntimeStatus, SelectionRect, TranslationPayload,
+};
 
 #[derive(Clone)]
 pub struct SharedState {
@@ -17,10 +19,19 @@ struct AppRuntime {
 }
 
 impl SharedState {
-    pub fn new(endpoint: String, model: String) -> Self {
+    pub fn new(
+        endpoint: String,
+        model: String,
+        ocr_provider: String,
+        ai_provider: String,
+        prompt_profile: String,
+    ) -> Self {
         let snapshot = RuntimeSnapshot {
             endpoint,
             model,
+            ocr_provider,
+            ai_provider,
+            prompt_profile,
             ..RuntimeSnapshot::default()
         };
 
@@ -137,11 +148,7 @@ impl SharedState {
         inner.snapshot.running && inner.pipeline_token == token
     }
 
-    pub fn set_status(
-        &self,
-        status: RuntimeStatus,
-        detail: impl Into<String>,
-    ) -> RuntimeSnapshot {
+    pub fn set_status(&self, status: RuntimeStatus, detail: impl Into<String>) -> RuntimeSnapshot {
         let mut inner = self.inner.lock();
         inner.snapshot.status = status;
         inner.snapshot.status_detail = detail.into();
@@ -169,6 +176,19 @@ impl SharedState {
         inner.snapshot.clone()
     }
 
+    pub fn set_provider_stack(
+        &self,
+        ocr_provider: String,
+        ai_provider: String,
+        prompt_profile: String,
+    ) -> RuntimeSnapshot {
+        let mut inner = self.inner.lock();
+        inner.snapshot.ocr_provider = ocr_provider;
+        inner.snapshot.ai_provider = ai_provider;
+        inner.snapshot.prompt_profile = prompt_profile;
+        inner.snapshot.clone()
+    }
+
     pub fn set_translation(&self, payload: TranslationPayload) -> RuntimeSnapshot {
         let mut inner = self.inner.lock();
         inner.snapshot.status = RuntimeStatus::Ready;
@@ -181,6 +201,8 @@ impl SharedState {
         inner.snapshot.last_updated = payload.captured_at.clone();
         inner.snapshot.last_detected_source = payload.detected_source.clone();
         inner.snapshot.last_error = None;
+        inner.snapshot.ai_provider = payload.provider.clone();
+        inner.snapshot.prompt_profile = payload.prompt_profile.clone();
         inner.translation = payload;
         inner.snapshot.clone()
     }

@@ -1,0 +1,10 @@
+from __future__ import annotations
+
+from typing import Any, Protocol
+
+
+class OcrProvider(Protocol):
+    id: str
+    label: str
+
+    def descriptor(self) -> dict[str, Any]: ...
