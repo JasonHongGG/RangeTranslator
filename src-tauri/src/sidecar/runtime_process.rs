@@ -1,4 +1,7 @@
-use std::{path::PathBuf, process::{Command, Stdio}};
+use std::{
+    path::PathBuf,
+    process::{Command, Stdio},
+};
 
 const RUNTIME_DIR_NAME: &str = "range-translator-runtime";
 const PYTHON_ENV_VAR: &str = "RANGE_TRANSLATOR_PYTHON";
@@ -15,7 +18,8 @@ pub struct ResolvedCommand {
 
 pub fn find_runtime_root() -> Result<PathBuf, String> {
     for root in candidate_runtime_roots() {
-        if root.join("pyproject.toml").exists() && root.join("range_translator_runtime").exists() {
+        if root.join("pyproject.toml").exists() && root.join("range_translator_runtime").exists()
+        {
             return Ok(root);
         }
     }
@@ -52,6 +56,14 @@ pub fn find_python_runtime(runtime_root: &PathBuf) -> Result<ResolvedCommand, St
     }
 
     let candidates = [
+        ResolvedCommand {
+            program: "py".to_string(),
+            args: vec!["-3.12".to_string()],
+        },
+        ResolvedCommand {
+            program: "py".to_string(),
+            args: vec!["-3.11".to_string()],
+        },
         ResolvedCommand {
             program: "python".to_string(),
             args: Vec::new(),

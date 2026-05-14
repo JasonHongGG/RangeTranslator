@@ -7,9 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from range_translator_runtime.application import build_default_application
+from range_translator_runtime.runtime_environment import configure_process_environment
 
 
 def main() -> int:
+    configure_process_environment()
     runtime_script = Path(__file__).resolve()
     subcommand = sys.argv[1] if len(sys.argv) > 1 else "status"
 
@@ -35,6 +37,7 @@ def main() -> int:
 
 
 def serve(runtime_script: Path) -> int:
+    configure_process_environment()
     application = build_default_application(runtime_script)
 
     while True:

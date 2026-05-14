@@ -7,6 +7,8 @@ export type RuntimeStatus =
   | 'ready'
   | 'error'
 
+export type VisibleLayer = 'none' | 'ocr' | 'translation'
+
 export type TextAlign = 'left' | 'center' | 'right'
 export type PartialUpdateStage = 'ocr' | 'translation' | 'complete'
 
@@ -34,23 +36,27 @@ export type OverlayBlock = {
 }
 
 export type TranslationPayload = {
+  generation: number
   selection: SelectionRect | null
   sourceLanguage: string
   targetLanguage: string
   detectedSource: string | null
   capturedAt: string | null
   unchanged: boolean
+  visibleLayer: VisibleLayer
   provider: string
   promptProfile: string
   blocks: OverlayBlock[]
 }
 
 export type TranslationPartialPayload = {
+  generation: number
   selection: SelectionRect | null
   sourceLanguage: string
   targetLanguage: string
   detectedSource: string | null
   capturedAt: string | null
+  visibleLayer: VisibleLayer
   provider: string
   promptProfile: string
   stage: PartialUpdateStage
@@ -78,6 +84,9 @@ export type RuntimeCapabilities = {
   ocrProviders: ProviderDescriptor[]
   aiProviders: ProviderDescriptor[]
   promptProfiles: PromptProfileDescriptor[]
+  defaultOcrProviderId: string | null
+  defaultAiProviderId: string | null
+  defaultPromptProfileId: string | null
 }
 
 export type BenchmarkCaseResult = {
@@ -115,6 +124,8 @@ export type RuntimeSnapshot = {
   copyMode: boolean
   endpoint: string
   model: string
+  generation: number
+  visibleLayer: VisibleLayer
   blockCount: number
   lastUpdated: string | null
   lastDetectedSource: string | null

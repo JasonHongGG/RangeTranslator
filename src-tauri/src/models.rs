@@ -31,6 +31,15 @@ pub enum PartialUpdateStage {
     Complete,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum VisibleLayer {
+    #[default]
+    None,
+    Ocr,
+    Translation,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SelectionRect {
@@ -70,12 +79,14 @@ pub struct OverlayBlock {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TranslationPayload {
+    pub generation: u64,
     pub selection: Option<SelectionRect>,
     pub source_language: String,
     pub target_language: String,
     pub detected_source: Option<String>,
     pub captured_at: Option<String>,
     pub unchanged: bool,
+    pub visible_layer: VisibleLayer,
     pub provider: String,
     pub prompt_profile: String,
     pub blocks: Vec<OverlayBlock>,
@@ -84,14 +95,16 @@ pub struct TranslationPayload {
 impl Default for TranslationPayload {
     fn default() -> Self {
         Self {
+            generation: 0,
             selection: None,
             source_language: "auto".to_string(),
             target_language: "zh-TW".to_string(),
             detected_source: None,
             captured_at: None,
             unchanged: false,
-            provider: "ollama".to_string(),
-            prompt_profile: "translation.ui_overlay.default".to_string(),
+            visible_layer: VisibleLayer::None,
+            provider: String::new(),
+            prompt_profile: String::new(),
             blocks: Vec::new(),
         }
     }
@@ -100,11 +113,13 @@ impl Default for TranslationPayload {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TranslationPartialPayload {
+    pub generation: u64,
     pub selection: Option<SelectionRect>,
     pub source_language: String,
     pub target_language: String,
     pub detected_source: Option<String>,
     pub captured_at: Option<String>,
+    pub visible_layer: VisibleLayer,
     pub provider: String,
     pub prompt_profile: String,
     pub stage: PartialUpdateStage,
@@ -138,6 +153,9 @@ pub struct RuntimeCapabilities {
     pub ocr_providers: Vec<ProviderDescriptor>,
     pub ai_providers: Vec<ProviderDescriptor>,
     pub prompt_profiles: Vec<PromptProfileDescriptor>,
+    pub default_ocr_provider_id: Option<String>,
+    pub default_ai_provider_id: Option<String>,
+    pub default_prompt_profile_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -150,6 +168,31 @@ pub struct AiTranslationRequest {
     pub source_language: String,
     pub target_language: String,
     pub texts: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrRecognitionRequest {
+    pub provider_id: String,
+    pub image_png_base64: String,
+    pub source_language: String,
+    pub hint_language: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrRecognitionLine {
+    pub text: String,
+    pub rect: PixelRect,
+    pub confidence: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrRecognitionResponse {
+    pub provider_id: String,
+    pub language: String,
+    pub lines: Vec<OcrRecognitionLine>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -238,6 +281,8 @@ pub struct RuntimeSnapshot {
     pub copy_mode: bool,
     pub endpoint: String,
     pub model: String,
+    pub generation: u64,
+    pub visible_layer: VisibleLayer,
     pub block_count: usize,
     pub last_updated: Option<String>,
     pub last_detected_source: Option<String>,
@@ -259,15 +304,17 @@ impl Default for RuntimeSnapshot {
             status_detail: "Ready".to_string(),
             source_language: "auto".to_string(),
             target_language: "zh-TW".to_string(),
-            ocr_provider: "windows-native".to_string(),
-            ai_provider: "ollama".to_string(),
-            prompt_profile: "translation.ui_overlay.default".to_string(),
+            ocr_provider: String::new(),
+            ai_provider: String::new(),
+            prompt_profile: String::new(),
             panel_pinned: true,
             selection: None,
             selector_bounds: None,
             copy_mode: false,
             endpoint: String::new(),
             model: "discovering".to_string(),
+            generation: 0,
+            visible_layer: VisibleLayer::None,
             block_count: 0,
             last_updated: None,
             last_detected_source: None,

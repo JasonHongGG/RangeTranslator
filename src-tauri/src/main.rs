@@ -4,7 +4,6 @@ mod app;
 mod benchmark;
 mod capture;
 mod models;
-mod providers;
 mod sidecar;
 mod state;
 
@@ -19,14 +18,7 @@ const DEFAULT_ENDPOINT: &str =
 const DEFAULT_MODEL: &str = "discovering";
 
 fn main() {
-    let (ocr_provider, ai_provider, prompt_profile) = commands::default_provider_stack();
-    let state = SharedState::new(
-        DEFAULT_ENDPOINT.to_string(),
-        DEFAULT_MODEL.to_string(),
-        ocr_provider,
-        ai_provider,
-        prompt_profile,
-    );
+    let state = SharedState::new(DEFAULT_ENDPOINT.to_string(), DEFAULT_MODEL.to_string());
 
     tauri::Builder::default()
         .manage(state)

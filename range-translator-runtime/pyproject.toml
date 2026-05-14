@@ -3,6 +3,11 @@ name = "range-translator-runtime"
 version = "0.1.0"
 description = "Persistent sidecar runtime for RangeTranslator OCR and AI providers"
 requires-python = ">=3.10"
+dependencies = [
+	"numpy>=1.26,<3",
+	"Pillow>=10,<12",
+	"paddleocr>=2.8,<3",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

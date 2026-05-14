@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Instant};
 
 use crate::{
     models::{AiTranslationRequest, BenchmarkCaseResult, BenchmarkReport},
-    providers::ai::default_runtime_client,
+    sidecar::runtime_gateway,
 };
 
 use super::suite::load_default_benchmark_suite;
@@ -14,7 +14,6 @@ pub async fn run_default_prompt_benchmark(
     prompt_profile: &str,
 ) -> Result<BenchmarkReport, String> {
     let suite = load_default_benchmark_suite().map_err(|error| error.to_string())?;
-    let ai_runtime = default_runtime_client();
     let mut total_score = 0.0_f32;
     let mut total_latency_ms = 0.0_f32;
     let mut cases = Vec::new();
@@ -26,21 +25,20 @@ pub async fn run_default_prompt_benchmark(
             .unwrap_or_else(|| prompt_profile.to_string());
 
         let started_at = Instant::now();
-        let response = ai_runtime
-            .translate(
-                AiTranslationRequest {
-                    endpoint: endpoint.to_string(),
-                    provider_id: provider_id.to_string(),
-                    model: model.to_string(),
-                    prompt_profile: case_prompt_profile.clone(),
-                    source_language: case.source_language.clone(),
-                    target_language: case.target_language.clone(),
-                    texts: case.texts.clone(),
-                },
-                Arc::new(|_| {}),
-            )
-            .await
-            .map_err(|error| format!("benchmark case {} failed: {error}", case.id))?;
+        let response = runtime_gateway().translate(
+            AiTranslationRequest {
+                endpoint: endpoint.to_string(),
+                provider_id: provider_id.to_string(),
+                model: model.to_string(),
+                prompt_profile: case_prompt_profile.clone(),
+                source_language: case.source_language.clone(),
+                target_language: case.target_language.clone(),
+                texts: case.texts.clone(),
+            },
+            Arc::new(|_| {}),
+        )
+        .await
+        .map_err(|error| format!("benchmark case {} failed: {error}", case.id))?;
 
         let latency_ms = started_at.elapsed().as_secs_f32() * 1000.0;
         let exact_match_score = exact_match_score(

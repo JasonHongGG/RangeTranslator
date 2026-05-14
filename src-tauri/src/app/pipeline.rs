@@ -1,10 +1,13 @@
 use std::{
     collections::HashMap,
+    io::Cursor,
     sync::{Arc, OnceLock},
     time::Duration,
 };
 
 use anyhow::{Context, Result};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use image::{DynamicImage, ImageFormat};
 use parking_lot::Mutex;
 use serde_json::json;
 use tauri::AppHandle;
@@ -13,14 +16,13 @@ use crate::{
     app::events::{emit_debug, emit_snapshot, emit_translation, emit_translation_partial},
     capture::{capture_region, estimate_colors, FrameSignature},
     models::{
-        AiTranslationDelta, AiTranslationRequest, AiTranslationResponse, OverlayBlock,
+        AiTranslationDelta, AiTranslationRequest, AiTranslationResponse, OcrRecognitionLine,
+        OcrRecognitionRequest, OverlayBlock,
         PartialUpdateStage, PipelineSettings, RuntimeStatus, TextAlign,
         TranslationPartialPayload, TranslationPayload,
+        VisibleLayer,
     },
-    providers::{
-        ai::default_runtime_client,
-        ocr::{resolve_ocr_provider, OcrTextLine},
-    },
+    sidecar::runtime_gateway,
     state::{self, SharedState},
 };
 
@@ -42,7 +44,6 @@ pub fn begin_pipeline(app: &AppHandle, state: SharedState, settings: PipelineSet
 pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Result<()> {
     let mut last_signature: Option<FrameSignature> = None;
     let mut detected_source_hint: Option<String> = None;
-    let ai_runtime = default_runtime_client();
 
     loop {
         if !state.is_token_active(token) {
@@ -58,8 +59,6 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             break;
         };
 
-        let ocr_provider = resolve_ocr_provider(&snapshot.ocr_provider);
-
         emit_snapshot(&app, &state.set_status(RuntimeStatus::Capturing, "Sampling"));
         let frame = capture_region(&selection)?;
         let signature = FrameSignature::from_image(&frame.image);
@@ -72,11 +71,16 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         last_signature = Some(signature);
 
         emit_snapshot(&app, &state.set_status(RuntimeStatus::Recognizing, "OCR"));
-        let recognized = ocr_provider.recognize(
-            &frame,
-            &snapshot.source_language,
-            detected_source_hint.as_deref(),
-        )?;
+        let encoded_frame = encode_frame_png_base64(&frame)?;
+        let recognized = runtime_gateway()
+            .recognize(OcrRecognitionRequest {
+            provider_id: snapshot.ocr_provider.clone(),
+            image_png_base64: encoded_frame,
+            source_language: snapshot.source_language.clone(),
+            hint_language: detected_source_hint.clone(),
+        })
+        .await
+        .map_err(anyhow::Error::msg)?;
         if snapshot.source_language == "auto" {
             detected_source_hint = Some(recognized.language.clone());
         }
@@ -90,26 +94,60 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             .collect::<Vec<_>>();
 
         let provider_snapshot = state.set_provider_stack(
-            ocr_provider.id().to_string(),
+            recognized.provider_id.clone(),
             snapshot.ai_provider.clone(),
             snapshot.prompt_profile.clone(),
         );
         emit_snapshot(&app, &provider_snapshot);
+
+        let ocr_payload = TranslationPayload {
+            generation: token,
+            selection: Some(selection.clone()),
+            source_language: snapshot.source_language.clone(),
+            target_language: snapshot.target_language.clone(),
+            detected_source: Some(recognized.language.clone()),
+            captured_at: Some(captured_at.clone()),
+            unchanged: false,
+            visible_layer: if base_blocks.is_empty() {
+                VisibleLayer::None
+            } else {
+                VisibleLayer::Ocr
+            },
+            provider: recognized.provider_id.clone(),
+            prompt_profile: snapshot.prompt_profile.clone(),
+            blocks: base_blocks.clone(),
+        };
+
+        let ocr_snapshot = state.set_translation(ocr_payload.clone());
+        emit_snapshot(&app, &ocr_snapshot);
+        emit_translation(&app, &ocr_payload);
+
         emit_translation_partial(
             &app,
             &TranslationPartialPayload {
+                generation: token,
                 selection: Some(selection.clone()),
                 source_language: snapshot.source_language.clone(),
                 target_language: snapshot.target_language.clone(),
                 detected_source: Some(recognized.language.clone()),
                 captured_at: Some(captured_at.clone()),
-                provider: ocr_provider.id().to_string(),
+                visible_layer: if base_blocks.is_empty() {
+                    VisibleLayer::None
+                } else {
+                    VisibleLayer::Ocr
+                },
+                provider: recognized.provider_id.clone(),
                 prompt_profile: snapshot.prompt_profile.clone(),
                 stage: PartialUpdateStage::Ocr,
                 complete: false,
                 blocks: base_blocks.clone(),
             },
         );
+
+        if base_blocks.is_empty() {
+            tokio::time::sleep(Duration::from_millis(180)).await;
+            continue;
+        }
 
         emit_snapshot(&app, &state.set_status(RuntimeStatus::Translating, "AI"));
         let texts = recognized
@@ -140,11 +178,13 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                 emit_translation_partial(
                     &app_handle,
                     &TranslationPartialPayload {
+                        generation: token,
                         selection: Some(selection_for_partial.clone()),
                         source_language: source_language_for_partial.clone(),
                         target_language: target_language_for_partial.clone(),
                         detected_source: delta.detected_source.clone(),
                         captured_at: Some(state::timestamp()),
+                        visible_layer: VisibleLayer::Translation,
                         provider: delta.provider_id.clone(),
                         prompt_profile: delta.prompt_profile.clone(),
                         stage: PartialUpdateStage::Translation,
@@ -178,18 +218,16 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             );
             cached
         } else {
-            ai_runtime
-                .translate(ai_request, partial_handler)
-                .await
-                .map(|response| {
+            match runtime_gateway().translate(ai_request, partial_handler).await {
+                Ok(response) => {
                     if !cache_key.is_empty() {
                         translation_cache()
                             .lock()
                             .insert(cache_key.clone(), response.clone());
                     }
                     response
-                })
-                .unwrap_or_else(|error| {
+                }
+                Err(error) => {
                     emit_debug(
                         &app,
                         "ai-provider",
@@ -200,20 +238,17 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                             "promptProfile": snapshot.prompt_profile,
                         }),
                     );
-
-                    AiTranslationResponse {
-                        provider_id: snapshot.ai_provider.clone(),
-                        model: snapshot.model.clone(),
-                        prompt_profile: snapshot.prompt_profile.clone(),
-                        detected_source: recognized.language.clone(),
-                        translations: texts.clone(),
-                        confidences: vec![1.0; texts.len()],
-                    }
-                })
+                    let fallback_snapshot =
+                        state.set_status(RuntimeStatus::Recognizing, "AI unavailable · OCR visible");
+                    emit_snapshot(&app, &fallback_snapshot);
+                    tokio::time::sleep(Duration::from_millis(180)).await;
+                    continue;
+                }
+            }
         };
 
         let provider_snapshot = state.set_provider_stack(
-            ocr_provider.id().to_string(),
+            recognized.provider_id,
             translation.provider_id.clone(),
             translation.prompt_profile.clone(),
         );
@@ -245,12 +280,14 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             .collect::<Vec<_>>();
 
         let payload = TranslationPayload {
+            generation: token,
             selection: Some(selection.clone()),
             source_language: snapshot.source_language.clone(),
             target_language: snapshot.target_language.clone(),
             detected_source: Some(translation.detected_source),
             captured_at: Some(captured_at),
             unchanged: false,
+            visible_layer: VisibleLayer::Translation,
             provider: translation.provider_id,
             prompt_profile: translation.prompt_profile,
             blocks,
@@ -259,11 +296,13 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         emit_translation_partial(
             &app,
             &TranslationPartialPayload {
+                generation: token,
                 selection: payload.selection.clone(),
                 source_language: payload.source_language.clone(),
                 target_language: payload.target_language.clone(),
                 detected_source: payload.detected_source.clone(),
                 captured_at: payload.captured_at.clone(),
+                visible_layer: VisibleLayer::Translation,
                 provider: payload.provider.clone(),
                 prompt_profile: payload.prompt_profile.clone(),
                 stage: PartialUpdateStage::Complete,
@@ -284,7 +323,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
 
 fn build_overlay_block(
     frame: &crate::capture::CapturedFrame,
-    line: &OcrTextLine,
+    line: &OcrRecognitionLine,
     index: usize,
     translated_text: String,
     streaming: bool,
@@ -296,15 +335,23 @@ fn build_overlay_block(
         translated_text,
         x: line.rect.x,
         y: line.rect.y,
-        width: line.rect.width.max(48),
-        height: line.rect.height.max(24),
-        font_size: (line.rect.height as f32 * 0.72).clamp(14.0, 42.0),
+        width: line.rect.width.max(1),
+        height: line.rect.height.max(1),
+        font_size: (line.rect.height as f32 * 0.92).clamp(10.0, 48.0),
         confidence: line.confidence,
         foreground,
         background,
         align: TextAlign::Left,
         streaming,
     }
+}
+
+fn encode_frame_png_base64(frame: &crate::capture::CapturedFrame) -> Result<String> {
+    let mut buffer = Cursor::new(Vec::new());
+    DynamicImage::ImageRgba8(frame.image.clone())
+        .write_to(&mut buffer, ImageFormat::Png)
+        .context("failed to encode captured frame as PNG")?;
+    Ok(BASE64_STANDARD.encode(buffer.into_inner()))
 }
 
 fn translation_cache() -> &'static Mutex<HashMap<String, AiTranslationResponse>> {

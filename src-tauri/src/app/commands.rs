@@ -4,11 +4,8 @@ use tauri::{AppHandle, Manager, State};
 use crate::{
     app::{events::{emit_debug, emit_snapshot, emit_translation}, pipeline, windows},
     benchmark::run_default_prompt_benchmark,
-    models::{BenchmarkReport, PipelineSettings, RuntimeCapabilities, SelectionRect, TranslationPayload},
-    providers::{
-        ai::{default_runtime_client, ollama_descriptor, DEFAULT_PROMPT_PROFILE, OLLAMA_PROVIDER_ID},
-        ocr::{available_provider_descriptors, default_ocr_provider_id},
-    },
+    models::{BenchmarkReport, PipelineSettings, RuntimeCapabilities, RuntimeSnapshot, SelectionRect, TranslationPayload},
+    sidecar::runtime_gateway,
     state::SharedState,
 };
 
@@ -23,39 +20,22 @@ pub fn get_latest_translation(state: State<'_, SharedState>) -> TranslationPaylo
 }
 
 #[tauri::command]
-pub async fn get_runtime_capabilities() -> Result<RuntimeCapabilities, String> {
-    let ai_runtime = default_runtime_client();
-    let mut capabilities = ai_runtime.query_capabilities().await.unwrap_or_else(|error| {
-        RuntimeCapabilities {
-            ocr_providers: Vec::new(),
-            ai_providers: vec![ollama_descriptor(false, Some(error))],
-            prompt_profiles: Vec::new(),
-        }
-    });
-
-    let mut ocr_providers = capabilities.ocr_providers;
-    for provider in available_provider_descriptors() {
-        if !ocr_providers.iter().any(|candidate| candidate.id == provider.id) {
-            ocr_providers.push(provider);
-        }
-    }
-    capabilities.ocr_providers = ocr_providers;
-
-    if capabilities.ai_providers.is_empty() {
-        capabilities.ai_providers.push(ollama_descriptor(
-            false,
-            Some("No AI providers discovered".to_string()),
-        ));
-    }
-
+pub async fn get_runtime_capabilities(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<RuntimeCapabilities, String> {
+    let capabilities = runtime_gateway().query_capabilities().await?;
+    sync_runtime_defaults(&app, state.inner_clone(), &capabilities);
     Ok(capabilities)
 }
 
 #[tauri::command]
 pub async fn run_prompt_benchmark(
+    app: AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<BenchmarkReport, String> {
-    let snapshot = state.snapshot();
+    let capabilities = runtime_gateway().query_capabilities().await?;
+    let snapshot = sync_runtime_defaults(&app, state.inner_clone(), &capabilities);
     run_default_prompt_benchmark(
         &snapshot.endpoint,
         &snapshot.model,
@@ -152,6 +132,10 @@ pub async fn submit_selection(
         target_language: snapshot_before.target_language,
     };
 
+    let capabilities = runtime_gateway().query_capabilities().await?;
+    let synced_snapshot = sync_runtime_defaults(&app, state.inner_clone(), &capabilities);
+    ensure_ocr_runtime_ready(&synced_snapshot, &capabilities)?;
+
     windows::ensure_overlay_window(&app, &selection, snapshot_before.copy_mode).await?;
 
     let snapshot = state.set_selection(selection);
@@ -201,6 +185,9 @@ pub async fn start_pipeline(
     settings: PipelineSettings,
 ) -> Result<(), String> {
     let selection = windows::selection_or_error(&state.inner_clone())?;
+    let capabilities = runtime_gateway().query_capabilities().await?;
+    let synced_snapshot = sync_runtime_defaults(&app, state.inner_clone(), &capabilities);
+    ensure_ocr_runtime_ready(&synced_snapshot, &capabilities)?;
     windows::ensure_overlay_window(&app, &selection, state.snapshot().copy_mode).await?;
     pipeline::begin_pipeline(&app, state.inner_clone(), settings);
     Ok(())
@@ -270,10 +257,81 @@ pub fn toggle_copy_mode(
     Ok(())
 }
 
-pub fn default_provider_stack() -> (String, String, String) {
-    (
-        default_ocr_provider_id().to_string(),
-        OLLAMA_PROVIDER_ID.to_string(),
-        DEFAULT_PROMPT_PROFILE.to_string(),
-    )
+fn sync_runtime_defaults(
+    app: &AppHandle,
+    state: SharedState,
+    capabilities: &RuntimeCapabilities,
+) -> RuntimeSnapshot {
+    let snapshot = state.snapshot();
+    let current_ocr_provider = snapshot.ocr_provider.clone();
+    let current_ai_provider = snapshot.ai_provider.clone();
+    let current_prompt_profile = snapshot.prompt_profile.clone();
+
+    let ocr_provider = if current_ocr_provider.is_empty() {
+        capabilities
+            .default_ocr_provider_id
+            .clone()
+            .unwrap_or_default()
+    } else {
+        current_ocr_provider.clone()
+    };
+
+    let ai_provider = if current_ai_provider.is_empty() {
+        capabilities
+            .default_ai_provider_id
+            .clone()
+            .unwrap_or_default()
+    } else {
+        current_ai_provider.clone()
+    };
+
+    let prompt_profile = if current_prompt_profile.is_empty() {
+        capabilities
+            .default_prompt_profile_id
+            .clone()
+            .unwrap_or_default()
+    } else {
+        current_prompt_profile.clone()
+    };
+
+    if ocr_provider == current_ocr_provider
+        && ai_provider == current_ai_provider
+        && prompt_profile == current_prompt_profile
+    {
+        return snapshot;
+    }
+
+    let next_snapshot = state.set_provider_stack(ocr_provider, ai_provider, prompt_profile);
+    emit_snapshot(app, &next_snapshot);
+    next_snapshot
+}
+
+fn ensure_ocr_runtime_ready(
+    snapshot: &RuntimeSnapshot,
+    capabilities: &RuntimeCapabilities,
+) -> Result<(), String> {
+    if !snapshot.ocr_provider.is_empty() {
+        return Ok(());
+    }
+
+    let details = capabilities
+        .ocr_providers
+        .iter()
+        .map(|provider| {
+            provider
+                .detail
+                .as_ref()
+                .map(|detail| format!("{}: {detail}", provider.id))
+                .unwrap_or_else(|| provider.id.clone())
+        })
+        .collect::<Vec<_>>();
+
+    if details.is_empty() {
+        return Err("No OCR provider is registered in the sidecar runtime.".to_string());
+    }
+
+    Err(format!(
+        "No OCR provider is available in the sidecar runtime. {}",
+        details.join(" | ")
+    ))
 }

@@ -48,7 +48,9 @@ export function OverlayView() {
 
   const syncTranslation = useEffectEvent((next: TranslationPayload) => {
     startTransition(() => {
-      setTranslation(next)
+      setTranslation((current) =>
+        next.generation >= current.generation ? next : current,
+      )
     })
   })
 
@@ -292,13 +294,13 @@ export function OverlayView() {
             left: toLogicalPixels(block.x, overlayScale),
             top: toLogicalPixels(block.y, overlayScale),
             width: toLogicalPixels(block.width, overlayScale),
-            minHeight: Math.max(18, toLogicalPixels(block.height, overlayScale)),
+            height: Math.max(1, toLogicalPixels(block.height, overlayScale)),
             color: block.foreground,
             background: withAlpha(block.background, 0.76),
-            fontSize: Math.max(12, block.fontSize / Math.max(overlayScale, 1)),
+            fontSize: Math.max(10, block.fontSize / Math.max(overlayScale, 1)),
           }}
         >
-          {block.translatedText}
+          {block.translatedText || block.sourceText}
         </article>
       ))}
     </div>

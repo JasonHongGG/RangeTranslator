@@ -30,7 +30,7 @@ dist/
 src-tauri/gen/
 src-tauri/target/
 
-.venv/
+**/.venv/
 .env
 *.pyc
 __pycache__/
@@ -38,3 +38,4 @@ __pycache__/
 
 
 reference/
+.venv*

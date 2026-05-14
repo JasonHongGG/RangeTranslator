@@ -5,6 +5,7 @@ import type {
   SelectionRect,
   TranslationPartialPayload,
   TranslationPayload,
+  VisibleLayer,
 } from '../types'
 
 export function normalizeSelection(
@@ -25,8 +26,29 @@ export function mergeTranslationPartial(
   current: TranslationPayload,
   partial: TranslationPartialPayload,
 ): TranslationPayload {
-  const order = new Map(current.blocks.map((block, index) => [block.id, index]))
-  const blockMap = new Map(current.blocks.map((block) => [block.id, block]))
+  if (partial.generation < current.generation) {
+    return current
+  }
+
+  const baseline: TranslationPayload =
+    partial.generation > current.generation
+      ? {
+          generation: partial.generation,
+          selection: partial.selection,
+          sourceLanguage: partial.sourceLanguage,
+          targetLanguage: partial.targetLanguage,
+          detectedSource: partial.detectedSource,
+          capturedAt: partial.capturedAt,
+          unchanged: false,
+          visibleLayer: partial.visibleLayer,
+          provider: partial.provider,
+          promptProfile: partial.promptProfile,
+          blocks: [],
+        }
+      : current
+
+  const order = new Map(baseline.blocks.map((block, index) => [block.id, index]))
+  const blockMap = new Map(baseline.blocks.map((block) => [block.id, block]))
 
   for (const block of partial.blocks) {
     const previous = blockMap.get(block.id)
@@ -41,14 +63,16 @@ export function mergeTranslationPartial(
   )
 
   return {
-    selection: partial.selection ?? current.selection,
-    sourceLanguage: partial.sourceLanguage || current.sourceLanguage,
-    targetLanguage: partial.targetLanguage || current.targetLanguage,
-    detectedSource: partial.detectedSource ?? current.detectedSource,
-    capturedAt: partial.capturedAt ?? current.capturedAt,
+    generation: partial.generation,
+    selection: partial.selection ?? baseline.selection,
+    sourceLanguage: partial.sourceLanguage || baseline.sourceLanguage,
+    targetLanguage: partial.targetLanguage || baseline.targetLanguage,
+    detectedSource: partial.detectedSource ?? baseline.detectedSource,
+    capturedAt: partial.capturedAt ?? baseline.capturedAt,
     unchanged: false,
-    provider: partial.provider || current.provider,
-    promptProfile: partial.promptProfile || current.promptProfile,
+    visibleLayer: (partial.visibleLayer || baseline.visibleLayer) as VisibleLayer,
+    provider: partial.provider || baseline.provider,
+    promptProfile: partial.promptProfile || baseline.promptProfile,
     blocks,
   }
 }

@@ -7,48 +7,25 @@ use std::{
 use parking_lot::Mutex;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde_json::{Value, json};
+use serde_json::Value;
 
-use crate::models::{
-    AiTranslationDelta, AiTranslationRequest, AiTranslationResponse, RuntimeCapabilities,
-};
-
-use super::process::{find_python_runtime, find_runtime_root, hidden_command};
 use super::protocol::{
     RuntimeFrame, RuntimeInvokeError, RuntimeRequest, decode_payload, format_worker_error,
 };
+use super::runtime_process::{find_python_runtime, find_runtime_root, hidden_command};
 
 const RETRY_LIMIT: usize = 1;
 
-static RUNTIME_WORKER: OnceLock<Mutex<Option<PersistentRuntime>>> = OnceLock::new();
+static SIDECAR_TRANSPORT: OnceLock<Mutex<Option<PersistentRuntimeTransport>>> = OnceLock::new();
 
-struct PersistentRuntime {
+struct PersistentRuntimeTransport {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
     next_request_id: u64,
 }
 
-pub async fn query_capabilities() -> Result<RuntimeCapabilities, String> {
-    tokio::task::spawn_blocking(|| invoke_runtime("status", &json!({})))
-        .await
-        .map_err(|error| error.to_string())?
-}
-
-pub async fn translate(
-    request: AiTranslationRequest,
-    on_partial: std::sync::Arc<dyn Fn(AiTranslationDelta) + Send + Sync>,
-) -> Result<AiTranslationResponse, String> {
-    tokio::task::spawn_blocking(move || {
-        invoke_runtime_streaming("translate", &request, move |delta: AiTranslationDelta| {
-            on_partial(delta);
-        })
-    })
-    .await
-    .map_err(|error| error.to_string())?
-}
-
-impl PersistentRuntime {
+impl PersistentRuntimeTransport {
     fn start() -> Result<Self, String> {
         let runtime_root = find_runtime_root()?;
         let python = find_python_runtime(&runtime_root)?;
@@ -208,11 +185,7 @@ impl PersistentRuntime {
     }
 }
 
-fn runtime_worker_slot() -> &'static Mutex<Option<PersistentRuntime>> {
-    RUNTIME_WORKER.get_or_init(|| Mutex::new(None))
-}
-
-fn invoke_runtime<TRequest, TResponse>(
+pub(crate) fn invoke<TRequest, TResponse>(
     subcommand: &str,
     payload: &TRequest,
 ) -> Result<TResponse, String>
@@ -220,10 +193,10 @@ where
     TRequest: Serialize,
     TResponse: DeserializeOwned,
 {
-    invoke_runtime_streaming(subcommand, payload, |_value: Value| {})
+    invoke_streaming(subcommand, payload, |_value: Value| {})
 }
 
-fn invoke_runtime_streaming<TRequest, TResponse, TEvent, F>(
+pub(crate) fn invoke_streaming<TRequest, TResponse, TEvent, F>(
     subcommand: &str,
     payload: &TRequest,
     mut on_event: F,
@@ -234,25 +207,25 @@ where
     TEvent: DeserializeOwned,
     F: FnMut(TEvent),
 {
-    let slot = runtime_worker_slot();
-    let mut worker_guard = slot.lock();
+    let slot = transport_slot();
+    let mut transport_guard = slot.lock();
     let mut attempt = 0usize;
 
     loop {
-        let needs_restart = worker_guard
+        let needs_restart = transport_guard
             .as_mut()
-            .map(|worker| !worker.is_alive())
+            .map(|transport| !transport.is_alive())
             .unwrap_or(true);
 
         if needs_restart {
-            *worker_guard = Some(PersistentRuntime::start()?);
+            *transport_guard = Some(PersistentRuntimeTransport::start()?);
         }
 
-        let Some(worker) = worker_guard.as_mut() else {
+        let Some(transport) = transport_guard.as_mut() else {
             return Err("sidecar runtime unavailable".to_string());
         };
 
-        match worker.invoke_streaming::<TRequest, TResponse, TEvent, _>(
+        match transport.invoke_streaming::<TRequest, TResponse, TEvent, _>(
             subcommand,
             payload,
             &mut on_event,
@@ -260,7 +233,7 @@ where
             Ok(response) => return Ok(response),
             Err(RuntimeInvokeError::Unrecoverable(error)) => return Err(error),
             Err(RuntimeInvokeError::Recoverable(error)) => {
-                *worker_guard = None;
+                *transport_guard = None;
                 if attempt >= RETRY_LIMIT {
                     return Err(error);
                 }
@@ -268,4 +241,8 @@ where
             }
         }
     }
+}
+
+fn transport_slot() -> &'static Mutex<Option<PersistentRuntimeTransport>> {
+    SIDECAR_TRANSPORT.get_or_init(|| Mutex::new(None))
 }

@@ -5,6 +5,7 @@ use parking_lot::Mutex;
 
 use crate::models::{
     PipelineSettings, RuntimeSnapshot, RuntimeStatus, SelectionRect, TranslationPayload,
+    VisibleLayer,
 };
 
 #[derive(Clone)]
@@ -19,19 +20,10 @@ struct AppRuntime {
 }
 
 impl SharedState {
-    pub fn new(
-        endpoint: String,
-        model: String,
-        ocr_provider: String,
-        ai_provider: String,
-        prompt_profile: String,
-    ) -> Self {
+    pub fn new(endpoint: String, model: String) -> Self {
         let snapshot = RuntimeSnapshot {
             endpoint,
             model,
-            ocr_provider,
-            ai_provider,
-            prompt_profile,
             ..RuntimeSnapshot::default()
         };
 
@@ -100,11 +92,16 @@ impl SharedState {
     pub fn clear_selection(&self) -> RuntimeSnapshot {
         let mut inner = self.inner.lock();
         inner.pipeline_token = inner.pipeline_token.saturating_add(1);
-        inner.translation = TranslationPayload::default();
+        inner.translation = TranslationPayload {
+            generation: inner.pipeline_token,
+            ..TranslationPayload::default()
+        };
         inner.snapshot.running = false;
         inner.snapshot.copy_mode = false;
         inner.snapshot.selection = None;
         inner.snapshot.selector_bounds = None;
+        inner.snapshot.generation = inner.pipeline_token;
+        inner.snapshot.visible_layer = VisibleLayer::None;
         inner.snapshot.block_count = 0;
         inner.snapshot.last_updated = None;
         inner.snapshot.last_detected_source = None;
@@ -119,9 +116,18 @@ impl SharedState {
         inner.pipeline_token = inner.pipeline_token.saturating_add(1);
         inner.snapshot.running = true;
         inner.snapshot.copy_mode = false;
-        inner.snapshot.source_language = settings.source_language;
+        inner.snapshot.source_language = settings.source_language.clone();
         inner.snapshot.target_language = settings.target_language.clone();
-        inner.translation.target_language = settings.target_language;
+        inner.snapshot.generation = inner.pipeline_token;
+        inner.snapshot.visible_layer = VisibleLayer::None;
+        inner.translation = TranslationPayload {
+            generation: inner.pipeline_token,
+            selection: inner.snapshot.selection.clone(),
+            source_language: settings.source_language,
+            target_language: settings.target_language,
+            visible_layer: VisibleLayer::None,
+            ..TranslationPayload::default()
+        };
         inner.snapshot.status = RuntimeStatus::Capturing;
         inner.snapshot.status_detail = "Sampling".to_string();
         inner.snapshot.last_error = None;
@@ -191,18 +197,34 @@ impl SharedState {
 
     pub fn set_translation(&self, payload: TranslationPayload) -> RuntimeSnapshot {
         let mut inner = self.inner.lock();
-        inner.snapshot.status = RuntimeStatus::Ready;
-        inner.snapshot.status_detail = if inner.snapshot.running {
-            "Live".to_string()
-        } else {
-            "Region locked".to_string()
-        };
+        inner.snapshot.generation = payload.generation;
+        inner.snapshot.visible_layer = payload.visible_layer;
+        match payload.visible_layer {
+            VisibleLayer::Translation => {
+                inner.snapshot.status = RuntimeStatus::Ready;
+                inner.snapshot.status_detail = if inner.snapshot.running {
+                    "Translation visible".to_string()
+                } else {
+                    "Translation ready".to_string()
+                };
+            }
+            VisibleLayer::Ocr => {
+                inner.snapshot.status = RuntimeStatus::Recognizing;
+                inner.snapshot.status_detail = "OCR visible".to_string();
+            }
+            VisibleLayer::None => {
+                inner.snapshot.status = RuntimeStatus::Recognizing;
+                inner.snapshot.status_detail = "No text detected".to_string();
+            }
+        }
         inner.snapshot.block_count = payload.blocks.len();
         inner.snapshot.last_updated = payload.captured_at.clone();
         inner.snapshot.last_detected_source = payload.detected_source.clone();
         inner.snapshot.last_error = None;
-        inner.snapshot.ai_provider = payload.provider.clone();
-        inner.snapshot.prompt_profile = payload.prompt_profile.clone();
+        if payload.visible_layer == VisibleLayer::Translation {
+            inner.snapshot.ai_provider = payload.provider.clone();
+            inner.snapshot.prompt_profile = payload.prompt_profile.clone();
+        }
         inner.translation = payload;
         inner.snapshot.clone()
     }

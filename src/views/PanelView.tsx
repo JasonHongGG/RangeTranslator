@@ -95,6 +95,7 @@ export function PanelView() {
     ? `${snapshot.selection.width} x ${snapshot.selection.height}`
     : 'No region'
   const statusTone = toneForStatus(snapshot.status)
+  const statusDetail = snapshot.lastError ?? snapshot.statusDetail
 
   const runCommand = async (action: () => Promise<void>) => {
     if (!isTauri()) {
@@ -317,6 +318,8 @@ export function PanelView() {
           >
             {selectionLabel}
           </span>
+          <span className="panel-status-divider" aria-hidden="true"></span>
+          <span className="panel-status-detail">{statusDetail}</span>
         </div>
 
         <div className="footer-tools" data-no-drag="true">

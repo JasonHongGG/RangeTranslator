@@ -1,5 +1,6 @@
-mod client;
-mod process;
+mod gateway;
 mod protocol;
+mod runtime_process;
+mod transport;
 
-pub use client::{query_capabilities, translate};
+pub use gateway::runtime_gateway;

@@ -6,7 +6,7 @@ export const PREVIEW_SNAPSHOT: RuntimeSnapshot = {
   statusDetail: 'Preview',
   sourceLanguage: 'auto',
   targetLanguage: 'zh-TW',
-  ocrProvider: 'windows-native',
+  ocrProvider: 'paddleocr',
   aiProvider: 'ollama',
   promptProfile: 'translation.ui_overlay.default',
   panelPinned: true,
@@ -15,6 +15,8 @@ export const PREVIEW_SNAPSHOT: RuntimeSnapshot = {
   copyMode: false,
   endpoint: 'https://lacresha-posological-steven.ngrok-free.dev',
   model: 'discovering',
+  generation: 0,
+  visibleLayer: 'translation',
   blockCount: 3,
   lastUpdated: null,
   lastDetectedSource: 'ja-JP',
@@ -22,12 +24,14 @@ export const PREVIEW_SNAPSHOT: RuntimeSnapshot = {
 }
 
 export const PREVIEW_TRANSLATION: TranslationPayload = {
+  generation: 0,
   selection: PREVIEW_SNAPSHOT.selection,
   sourceLanguage: 'auto',
   targetLanguage: 'zh-TW',
   detectedSource: 'ja-JP',
   capturedAt: null,
   unchanged: false,
+  visibleLayer: 'translation',
   provider: 'ollama',
   promptProfile: 'translation.ui_overlay.default',
   blocks: [

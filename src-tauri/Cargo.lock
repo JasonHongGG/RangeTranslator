@@ -2817,6 +2817,7 @@ name = "range-translator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "image 0.25.10",
  "parking_lot",
@@ -2827,7 +2828,6 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tokio",
- "windows 0.61.3",
 ]
 
 [[package]]

@@ -30,15 +30,24 @@ class RuntimeApplication:
     ) -> dict[str, Any]:
         if subcommand == "status":
             return self.status()
+        if subcommand == "recognize":
+            return self.recognize(payload)
         if subcommand == "translate":
             return self.translate(payload, emit_event)
         raise RuntimeError(f"Unsupported subcommand: {subcommand}")
 
     def status(self) -> dict[str, Any]:
+        ocr_providers = [provider.descriptor() for provider in self.ocr_providers.values()]
+        ai_providers = [provider.descriptor() for provider in self.ai_providers.values()]
+        prompt_profiles = self.prompt_repository.list_profiles()
+
         return {
-            "ocrProviders": [provider.descriptor() for provider in self.ocr_providers.values()],
-            "aiProviders": [provider.descriptor() for provider in self.ai_providers.values()],
-            "promptProfiles": self.prompt_repository.list_profiles(),
+            "ocrProviders": ocr_providers,
+            "aiProviders": ai_providers,
+            "promptProfiles": prompt_profiles,
+            "defaultOcrProviderId": self._default_provider_id(ocr_providers),
+            "defaultAiProviderId": self._default_provider_id(ai_providers),
+            "defaultPromptProfileId": self._default_prompt_profile_id(prompt_profiles),
         }
 
     def translate(
@@ -55,6 +64,42 @@ class RuntimeApplication:
         if provider is None:
             raise RuntimeError(f"AI provider not found: {provider_id}")
         return provider.translate(payload, prompt, emit_event)
+
+    def recognize(self, payload: dict[str, Any]) -> dict[str, Any]:
+        provider_id = str(
+            payload.get("providerId") or self._default_provider_id_from_map(self.ocr_providers)
+        )
+        provider = self.ocr_providers.get(provider_id)
+        if provider is None:
+            raise RuntimeError(f"OCR provider not found: {provider_id}")
+        return provider.recognize(payload)
+
+    def _default_provider_id(self, providers: list[dict[str, Any]]) -> str | None:
+        for provider in providers:
+            if provider.get("available"):
+                return str(provider.get("id"))
+        return None
+
+    def _default_provider_id_from_map(self, providers: dict[str, Any]) -> str:
+        descriptors = [provider.descriptor() for provider in providers.values()]
+        provider_id = self._default_provider_id(descriptors)
+        if provider_id is None:
+            details = [
+                f"{descriptor.get('id')}: {descriptor.get('detail')}"
+                for descriptor in descriptors
+                if descriptor.get("detail")
+            ]
+            if details:
+                raise RuntimeError(
+                    "No available provider is registered. " + " | ".join(details)
+                )
+            raise RuntimeError("No available provider is registered")
+        return provider_id
+
+    def _default_prompt_profile_id(self, prompt_profiles: list[dict[str, Any]]) -> str | None:
+        if not prompt_profiles:
+            return None
+        return str(prompt_profiles[0].get("id"))
 
 
 def build_default_application(runtime_script: Path) -> RuntimeApplication:
