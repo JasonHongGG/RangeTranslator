@@ -12,7 +12,7 @@ export const PREVIEW_SNAPSHOT: RuntimeSnapshot = {
   panelPinned: true,
   selection: { x: 280, y: 180, width: 764, height: 312 },
   selectorBounds: { x: 0, y: 0, width: 1280, height: 720 },
-  copyMode: false,
+  copyMode: true,
   endpoint: 'https://lacresha-posological-steven.ngrok-free.dev',
   model: 'discovering',
   generation: 0,

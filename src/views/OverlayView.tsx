@@ -277,12 +277,6 @@ export function OverlayView() {
         <span className="overlay-corner overlay-corner-br"></span>
       </div>
 
-      <div className="overlay-meta">
-        <span className={`overlay-mode ${snapshot.copyMode ? 'overlay-mode-edit' : 'overlay-mode-pass'}`}>
-          {snapshot.copyMode ? 'EDIT' : 'PASS'}
-        </span>
-      </div>
-
       {deferredBlocks.map((block) => (
         <article
           key={block.id}

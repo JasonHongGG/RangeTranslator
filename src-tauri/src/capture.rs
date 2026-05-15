@@ -4,6 +4,13 @@ use screenshots::Screen;
 
 use crate::models::{PixelRect, SelectionRect};
 
+const FRAME_SIGNATURE_GRID: usize = 12;
+const FRAME_SIGNATURE_BUCKETS: usize = FRAME_SIGNATURE_GRID * FRAME_SIGNATURE_GRID;
+const FRAME_SIGNATURE_CHANGED_CELL_DELTA: u32 = 8;
+const FRAME_SIGNATURE_PEAK_DELTA: u32 = 16;
+const FRAME_SIGNATURE_TOTAL_DELTA: u32 = 120;
+const FRAME_SIGNATURE_CHANGED_CELLS: u32 = 4;
+
 #[derive(Debug, Clone)]
 pub struct CapturedFrame {
     pub image: RgbaImage,
@@ -29,20 +36,20 @@ pub struct DesktopBounds {
 
 #[derive(Debug, Clone)]
 pub struct FrameSignature {
-    buckets: [u8; 64],
+    buckets: [u8; FRAME_SIGNATURE_BUCKETS],
 }
 
 impl FrameSignature {
     pub fn from_image(image: &RgbaImage) -> Self {
-        let mut buckets = [0_u8; 64];
+        let mut buckets = [0_u8; FRAME_SIGNATURE_BUCKETS];
 
         let width = image.width().max(1);
         let height = image.height().max(1);
-        let cell_w = (width as f32 / 8.0).max(1.0);
-        let cell_h = (height as f32 / 8.0).max(1.0);
+        let cell_w = (width as f32 / FRAME_SIGNATURE_GRID as f32).max(1.0);
+        let cell_h = (height as f32 / FRAME_SIGNATURE_GRID as f32).max(1.0);
 
-        for row in 0..8 {
-            for col in 0..8 {
+        for row in 0..FRAME_SIGNATURE_GRID {
+            for col in 0..FRAME_SIGNATURE_GRID {
                 let start_x = (col as f32 * cell_w).floor() as u32;
                 let end_x = (((col + 1) as f32) * cell_w).ceil() as u32;
                 let start_y = (row as f32 * cell_h).floor() as u32;
@@ -59,7 +66,7 @@ impl FrameSignature {
                 }
 
                 let avg = if count == 0.0 { 0.0 } else { total / count };
-                buckets[row * 8 + col] = avg as u8;
+                buckets[row * FRAME_SIGNATURE_GRID + col] = avg as u8;
             }
         }
 
@@ -67,15 +74,22 @@ impl FrameSignature {
     }
 
     pub fn is_meaningfully_different(&self, previous: &Self) -> bool {
-        let total = self
-            .buckets
-            .iter()
-            .zip(previous.buckets.iter())
-            .map(|(current, old)| (i16::from(*current) - i16::from(*old)).unsigned_abs())
-            .map(u32::from)
-            .sum::<u32>();
+        let mut total = 0_u32;
+        let mut peak = 0_u32;
+        let mut changed_cells = 0_u32;
 
-        total > 360
+        for (current, old) in self.buckets.iter().zip(previous.buckets.iter()) {
+            let delta = u32::from((i16::from(*current) - i16::from(*old)).unsigned_abs());
+            total += delta;
+            peak = peak.max(delta);
+            if delta >= FRAME_SIGNATURE_CHANGED_CELL_DELTA {
+                changed_cells += 1;
+            }
+        }
+
+        total >= FRAME_SIGNATURE_TOTAL_DELTA
+            || peak >= FRAME_SIGNATURE_PEAK_DELTA
+            || changed_cells >= FRAME_SIGNATURE_CHANGED_CELLS
     }
 }
 

@@ -310,7 +310,7 @@ impl Default for RuntimeSnapshot {
             panel_pinned: true,
             selection: None,
             selector_bounds: None,
-            copy_mode: false,
+            copy_mode: true,
             endpoint: String::new(),
             model: "discovering".to_string(),
             generation: 0,

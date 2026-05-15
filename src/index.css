@@ -736,37 +736,11 @@ svg {
   border-bottom-right-radius: 18px;
 }
 
-.overlay-meta {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  justify-content: flex-end;
-  pointer-events: none;
-}
-
-.overlay-mode {
-  font-size: 10px;
-  background: rgba(17, 26, 35, 0.58);
-  color: rgba(247, 250, 253, 0.92);
-  border: 1px solid rgba(121, 167, 218, 0.28);
-}
-
-.overlay-mode-pass {
-  background: rgba(17, 26, 35, 0.58);
-}
-
-.overlay-mode-edit {
-  background: rgba(250, 252, 255, 0.9);
-  color: var(--ink-strong);
-  border-color: rgba(121, 167, 218, 0.34);
-}
-
 .overlay-block {
   position: absolute;
   border-radius: 6px;
   padding: 0;
-  display: flex;
-  align-items: center;
+  display: block;
   font-family: 'Segoe UI', 'Microsoft JhengHei UI', 'Yu Gothic UI', sans-serif;
   line-height: 1.04;
   letter-spacing: 0;

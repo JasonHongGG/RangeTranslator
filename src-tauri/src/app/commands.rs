@@ -251,8 +251,11 @@ pub fn stop_pipeline(app: AppHandle, state: State<'_, SharedState>) -> Result<()
     let snapshot = state.stop_pipeline();
     if let Some(window) = app.get_webview_window("overlay") {
         window
-            .set_ignore_cursor_events(true)
+            .set_ignore_cursor_events(!snapshot.copy_mode)
             .map_err(|error| error.to_string())?;
+        if snapshot.copy_mode {
+            window.set_focus().map_err(|error| error.to_string())?;
+        }
     }
     emit_snapshot(&app, &snapshot);
     Ok(())

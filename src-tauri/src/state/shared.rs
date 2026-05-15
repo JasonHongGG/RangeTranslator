@@ -97,7 +97,6 @@ impl SharedState {
             ..TranslationPayload::default()
         };
         inner.snapshot.running = false;
-        inner.snapshot.copy_mode = false;
         inner.snapshot.selection = None;
         inner.snapshot.selector_bounds = None;
         inner.snapshot.generation = inner.pipeline_token;
@@ -115,7 +114,6 @@ impl SharedState {
         let mut inner = self.inner.lock();
         inner.pipeline_token = inner.pipeline_token.saturating_add(1);
         inner.snapshot.running = true;
-        inner.snapshot.copy_mode = false;
         inner.snapshot.source_language = settings.source_language.clone();
         inner.snapshot.target_language = settings.target_language.clone();
         inner.snapshot.generation = inner.pipeline_token;
@@ -138,7 +136,6 @@ impl SharedState {
         let mut inner = self.inner.lock();
         inner.pipeline_token = inner.pipeline_token.saturating_add(1);
         inner.snapshot.running = false;
-        inner.snapshot.copy_mode = false;
         if inner.snapshot.selection.is_some() {
             inner.snapshot.status = RuntimeStatus::Ready;
             inner.snapshot.status_detail = "Region locked".to_string();
