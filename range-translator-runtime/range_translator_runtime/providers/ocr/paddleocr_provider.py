@@ -1,11 +1,23 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import ctypes
 import io
-import platform
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
+
+
+DETECTION_MODEL_NAME = "PP-OCRv5_mobile_det"
+
+
+@dataclass(frozen=True, slots=True)
+class _LanguageGroup:
+    paddle_lang: str
+    recognition_model: str
+    resolved_tag: str
+    score_key: str
 
 
 @dataclass(slots=True)
@@ -13,9 +25,9 @@ class _RuntimeSupport:
     available: bool
     detail: str | None
     paddle_ocr: Any | None
+    paddle: Any | None
     numpy: Any | None
     pil_image: Any | None
-    use_gpu: bool
 
 
 class PaddleOcrProvider:
@@ -57,7 +69,7 @@ class PaddleOcrProvider:
 
         for group in candidate_groups:
             engine = self._get_engine(group)
-            lines = self._run_engine(engine, group.lang, image)
+            lines = self._run_engine(engine, image)
             score = self._score(lines, group)
             if score > best_score:
                 best_score = score
@@ -79,9 +91,9 @@ class PaddleOcrProvider:
                 available=False,
                 detail=f"Missing OCR image dependencies: {error}",
                 paddle_ocr=None,
+                paddle=None,
                 numpy=None,
                 pil_image=None,
-                use_gpu=False,
             )
 
         try:
@@ -94,21 +106,22 @@ class PaddleOcrProvider:
                     f"paddlepaddle-gpu package first: {error}"
                 ),
                 paddle_ocr=None,
+                paddle=None,
                 numpy=np,
                 pil_image=Image,
-                use_gpu=False,
             )
 
         try:
+            import paddleocr as paddleocr_package
             from paddleocr import PaddleOCR
         except Exception as error:
             return _RuntimeSupport(
                 available=False,
                 detail=f"PaddleOCR import failed: {error}",
                 paddle_ocr=None,
+                paddle=paddle,
                 numpy=np,
                 pil_image=Image,
-                use_gpu=False,
             )
 
         use_gpu = bool(getattr(paddle.device, "is_compiled_with_cuda", lambda: False)())
@@ -117,9 +130,9 @@ class PaddleOcrProvider:
                 available=False,
                 detail="Installed Paddle build is CPU-only. This runtime requires a supported GPU build.",
                 paddle_ocr=PaddleOCR,
+                paddle=paddle,
                 numpy=np,
                 pil_image=Image,
-                use_gpu=False,
             )
 
         if not _has_required_cuda_runtime():
@@ -127,31 +140,37 @@ class PaddleOcrProvider:
                 available=False,
                 detail="Missing CUDA/cuDNN runtime for Paddle GPU.",
                 paddle_ocr=PaddleOCR,
+                paddle=paddle,
                 numpy=np,
                 pil_image=Image,
-                use_gpu=False,
             )
 
-        unsupported_detail = _unsupported_gpu_detail(paddle)
-        if unsupported_detail is not None:
+        validation_error = _validate_gpu_runtime(paddle)
+        if validation_error is not None:
             return _RuntimeSupport(
                 available=False,
-                detail=unsupported_detail,
+                detail=validation_error,
                 paddle_ocr=PaddleOCR,
+                paddle=paddle,
                 numpy=np,
                 pil_image=Image,
-                use_gpu=False,
             )
 
         device_name = _gpu_device_name(paddle)
-        detail = f"GPU ready: {device_name}" if device_name else "GPU ready"
+        paddleocr_version = getattr(paddleocr_package, "__version__", "unknown")
+        detail_parts = [
+            f"GPU ready: {device_name}" if device_name else "GPU ready",
+            f"Paddle {getattr(paddle, '__version__', 'unknown')}",
+            f"PaddleOCR {paddleocr_version}",
+            f"CUDA {paddle.version.cuda()}",
+        ]
         return _RuntimeSupport(
             available=True,
-            detail=detail,
+            detail=" | ".join(detail_parts),
             paddle_ocr=PaddleOCR,
+            paddle=paddle,
             numpy=np,
             pil_image=Image,
-            use_gpu=use_gpu,
         )
 
     def _decode_image(self, image_base64: str) -> Any:
@@ -170,58 +189,94 @@ class PaddleOcrProvider:
 
         groups: list[_LanguageGroup] = []
 
-        for candidate in [hint_language, "ja-JP", "zh-TW", "ko-KR", "en-US"]:
+        family_fallbacks = [
+            "en-US",
+            "ja-JP",
+            "ko-KR",
+            "zh-Hans",
+            "fr-FR",
+            "ru-RU",
+            "th-TH",
+        ]
+
+        candidates = []
+        if hint_language:
+            candidates.append(hint_language)
+        candidates.extend(family_fallbacks)
+
+        seen_candidates: set[tuple[str, str]] = set()
+        for candidate in candidates:
             if not candidate:
                 continue
             group = _map_language_group(candidate)
             if group is None:
                 continue
-            if not any(existing.lang == group.lang for existing in groups):
-                groups.append(group)
+            cache_key = (group.recognition_model, group.score_key)
+            if cache_key in seen_candidates:
+                continue
+            seen_candidates.add(cache_key)
+            groups.append(group)
 
         if not groups:
-            groups.append(_LanguageGroup(lang="en", resolved_tag="en-US"))
+            groups.append(_map_language_group("en-US"))
 
         return groups
 
     def _get_engine(self, group: "_LanguageGroup") -> Any:
-        cache_key = self._engine_cache_key(group.lang, self._support.use_gpu)
+        cache_key = self._engine_cache_key(group.recognition_model)
         if cache_key not in self._engines:
             self._engines[cache_key] = self._support.paddle_ocr(
-                use_angle_cls=False,
-                lang=group.lang,
-                show_log=False,
-                use_gpu=self._support.use_gpu,
+                text_detection_model_name=DETECTION_MODEL_NAME,
+                text_recognition_model_name=group.recognition_model,
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+                use_textline_orientation=False,
+                device="gpu:0",
             )
         return self._engines[cache_key]
 
-    def _run_engine(self, engine: Any, lang: str, image: Any) -> list[dict[str, Any]]:
+    def _run_engine(self, engine: Any, image: Any) -> list[dict[str, Any]]:
         try:
-            raw_result = engine.ocr(image, cls=False)
-        except RuntimeError as error:
-            raise RuntimeError(f"PaddleOCR GPU inference failed: {error}") from error
+            raw_result = engine.predict(image)
+        except Exception as error:
+            raise RuntimeError(f"PaddleOCR PP-OCRv5 inference failed: {error}") from error
         return self._parse_result(raw_result)
 
     def _parse_result(self, raw_result: Any) -> list[dict[str, Any]]:
         if not raw_result:
             return []
 
-        entries = raw_result[0] if isinstance(raw_result, list) else raw_result
-        if not entries:
+        page = raw_result[0] if isinstance(raw_result, list) else raw_result
+        if not page:
             return []
 
+        rec_texts = list(page.get("rec_texts") or [])
+        rec_scores = list(page.get("rec_scores") or [])
+        rec_boxes = _normalize_sequence(page.get("rec_boxes"))
+        rec_polys = _normalize_sequence(page.get("rec_polys"))
+        dt_polys = _normalize_sequence(page.get("dt_polys"))
+
         lines: list[dict[str, Any]] = []
-        for line in entries:
-            if not line or len(line) < 2:
-                continue
-            points, content = line[0], line[1]
-            if not isinstance(content, (list, tuple)) or len(content) < 2:
-                continue
-            text = str(content[0]).strip()
+        for index, content in enumerate(rec_texts):
+            text = str(content or "").strip()
             if not text:
                 continue
-            confidence = float(content[1])
-            rect = _rect_from_points(points)
+
+            confidence = 0.0
+            if index < len(rec_scores):
+                confidence = float(rec_scores[index])
+
+            rect = None
+            if index < len(rec_boxes):
+                rect = _rect_from_box(rec_boxes[index])
+            elif index < len(rec_polys):
+                rect = _rect_from_points(rec_polys[index])
+            elif index < len(dt_polys):
+                rect = _rect_from_points(dt_polys[index])
+
+            if rect is None:
+                continue
+
             lines.append(
                 {
                     "text": text,
@@ -237,16 +292,10 @@ class PaddleOcrProvider:
             len(str(line.get("text") or "").replace(" ", "")) * float(line.get("confidence") or 0.0)
             for line in lines
         )
-        return base_score + _script_bonus(text, group.lang)
+        return base_score + _script_bonus(text, group.score_key)
 
-    def _engine_cache_key(self, lang: str, use_gpu: bool) -> str:
-        return f"{'gpu' if use_gpu else 'cpu'}:{lang}"
-
-
-@dataclass(frozen=True, slots=True)
-class _LanguageGroup:
-    lang: str
-    resolved_tag: str
+    def _engine_cache_key(self, recognition_model: str) -> str:
+        return recognition_model
 
 
 def _map_language_group(tag: str) -> _LanguageGroup | None:
@@ -254,18 +303,106 @@ def _map_language_group(tag: str) -> _LanguageGroup | None:
     if normalized == "auto":
         return None
     if normalized.startswith("ja"):
-        return _LanguageGroup(lang="japan", resolved_tag="ja-JP")
+        return _LanguageGroup(
+            paddle_lang="japan",
+            recognition_model="PP-OCRv5_mobile_rec",
+            resolved_tag="ja-JP",
+            score_key="japan",
+        )
     if normalized.startswith("ko"):
-        return _LanguageGroup(lang="korean", resolved_tag="ko-KR")
+        return _LanguageGroup(
+            paddle_lang="korean",
+            recognition_model="korean_PP-OCRv5_mobile_rec",
+            resolved_tag="ko-KR",
+            score_key="korean",
+        )
     if normalized.startswith("zh"):
-        return _LanguageGroup(lang="ch", resolved_tag="zh-TW" if "tw" in normalized or "hant" in normalized else "zh-Hans")
+        return _LanguageGroup(
+            paddle_lang="chinese_cht" if "tw" in normalized or "hant" in normalized else "ch",
+            recognition_model="PP-OCRv5_mobile_rec",
+            resolved_tag="zh-TW" if "tw" in normalized or "hant" in normalized else "zh-Hans",
+            score_key="ch",
+        )
     if normalized.startswith("en"):
-        return _LanguageGroup(lang="en", resolved_tag="en-US")
-    if normalized.startswith(("fr", "de", "es", "it", "pt")):
-        return _LanguageGroup(lang="latin", resolved_tag=tag)
+        return _LanguageGroup(
+            paddle_lang="en",
+            recognition_model="en_PP-OCRv5_mobile_rec",
+            resolved_tag="en-US",
+            score_key="en",
+        )
+    if normalized.startswith(("fr", "de", "es", "it", "pt", "vi", "id")):
+        resolved_tag = _canonical_tag(tag)
+        return _LanguageGroup(
+            paddle_lang=resolved_tag.split("-")[0].lower(),
+            recognition_model="latin_PP-OCRv5_mobile_rec",
+            resolved_tag=resolved_tag,
+            score_key="latin",
+        )
     if normalized.startswith(("ru", "uk", "bg", "sr")):
-        return _LanguageGroup(lang="cyrillic", resolved_tag=tag)
-    return _LanguageGroup(lang="en", resolved_tag=tag)
+        resolved_tag = _canonical_tag(tag)
+        return _LanguageGroup(
+            paddle_lang=resolved_tag.split("-")[0].lower(),
+            recognition_model="eslav_PP-OCRv5_mobile_rec",
+            resolved_tag=resolved_tag,
+            score_key="cyrillic",
+        )
+    if normalized.startswith("th"):
+        return _LanguageGroup(
+            paddle_lang="th",
+            recognition_model="th_PP-OCRv5_mobile_rec",
+            resolved_tag="th-TH",
+            score_key="thai",
+        )
+    return _LanguageGroup(
+        paddle_lang="en",
+        recognition_model="en_PP-OCRv5_mobile_rec",
+        resolved_tag=_canonical_tag(tag),
+        score_key="en",
+    )
+
+
+def _canonical_tag(tag: str) -> str:
+    normalized = tag.lower()
+    aliases = {
+        "fr": "fr-FR",
+        "de": "de-DE",
+        "es": "es-ES",
+        "ru": "ru-RU",
+        "th": "th-TH",
+        "vi": "vi-VN",
+        "id": "id-ID",
+        "uk": "uk-UA",
+        "bg": "bg-BG",
+        "sr": "sr-RS",
+    }
+    return aliases.get(normalized, tag)
+
+
+def _normalize_sequence(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
+def _rect_from_box(box: Any) -> dict[str, int] | None:
+    if not isinstance(box, Iterable):
+        return None
+    values = [int(round(float(point))) for point in box]
+    if len(values) != 4:
+        return None
+    left, top, right, bottom = values
+    return {
+        "x": max(left, 0),
+        "y": max(top, 0),
+        "width": max(right - left, 1),
+        "height": max(bottom - top, 1),
+    }
 
 
 def _rect_from_points(points: Any) -> dict[str, int]:
@@ -283,17 +420,14 @@ def _rect_from_points(points: Any) -> dict[str, int]:
     }
 
 
-def _is_gpu_runtime_error(error: RuntimeError) -> bool:
-    message = str(error).lower()
-    return "cudnn" in message or "cuda" in message or "dynamic library" in message
-
-
 def _has_required_cuda_runtime() -> bool:
-    try:
-        ctypes.WinDLL("cudnn64_8.dll")
-        return True
-    except OSError:
-        return False
+    for library_name in ("cudnn64_9.dll", "cudnn64_8.dll"):
+        try:
+            ctypes.WinDLL(library_name)
+            return True
+        except OSError:
+            continue
+    return False
 
 
 def _gpu_device_name(paddle: Any) -> str | None:
@@ -303,25 +437,26 @@ def _gpu_device_name(paddle: Any) -> str | None:
         return None
 
 
-def _unsupported_gpu_detail(paddle: Any) -> str | None:
+def _validate_gpu_runtime(paddle: Any) -> str | None:
+    stdout_buffer = io.StringIO()
+    stderr_buffer = io.StringIO()
+
     try:
-        properties = paddle.device.cuda.get_device_properties()
+        with contextlib.redirect_stdout(stdout_buffer), contextlib.redirect_stderr(
+            stderr_buffer
+        ):
+            paddle.utils.run_check()
     except Exception as error:
-        return f"Failed to inspect GPU properties for Paddle: {error}"
+        details: list[str] = []
+        stdout_output = stdout_buffer.getvalue().strip()
+        stderr_output = stderr_buffer.getvalue().strip()
+        if stdout_output:
+            details.append(f"stdout: {stdout_output}")
+        if stderr_output:
+            details.append(f"stderr: {stderr_output}")
 
-    capability = f"{properties.major}.{properties.minor}"
-    version = str(getattr(paddle, "__version__", "unknown"))
-    if (
-        platform.system() == "Windows"
-        and version.startswith("2.6.")
-        and int(properties.major) >= 12
-    ):
-        return (
-            "Installed Paddle GPU wheel "
-            f"({version}) does not support GPU compute capability {capability} on Windows. "
-            "This machine needs a newer official Windows GPU wheel, or a Linux/source-built runtime."
-        )
-
+        detail_suffix = f" ({' | '.join(details)})" if details else ""
+        return f"Paddle GPU validation failed: {error}{detail_suffix}"
     return None
 
 
@@ -331,14 +466,23 @@ def _script_bonus(text: str, lang: str) -> float:
         return 0.0
 
     ascii_latin = sum(character.isascii() and (character.isalnum() or character in "'-_./,:;!?()[]{}") for character in stripped)
+    latin_extended = sum(_is_latin_extended(character) for character in stripped)
     hiragana_katakana = sum(_is_hiragana_katakana(character) for character in stripped)
     cjk = sum(_is_cjk(character) for character in stripped)
     hangul = sum(_is_hangul(character) for character in stripped)
     cyrillic = sum(_is_cyrillic(character) for character in stripped)
     total = len(stripped)
 
-    if lang in {"en", "latin"}:
-        return 12.0 if ascii_latin / total >= 0.8 and cjk == 0 and hangul == 0 and cyrillic == 0 else 0.0
+    if lang == "en":
+        if latin_extended > 0:
+            return -4.0
+        return 14.0 if ascii_latin / total >= 0.8 and cjk == 0 and hangul == 0 and cyrillic == 0 else 0.0
+    if lang == "latin":
+        if latin_extended > 0:
+            return 12.0
+        if ascii_latin / total >= 0.8 and cjk == 0 and hangul == 0 and cyrillic == 0:
+            return 4.0
+        return 0.0
     if lang == "japan":
         if hiragana_katakana > 0:
             return 12.0
@@ -353,6 +497,13 @@ def _script_bonus(text: str, lang: str) -> float:
         return 0.0
     if lang == "korean":
         if hangul > 0:
+            return 12.0
+        if ascii_latin / total >= 0.8:
+            return -6.0
+        return 0.0
+    if lang == "thai":
+        thai = sum(_is_thai(character) for character in stripped)
+        if thai > 0:
             return 12.0
         if ascii_latin / total >= 0.8:
             return -6.0
@@ -379,6 +530,16 @@ def _is_cjk(character: str) -> bool:
 def _is_hangul(character: str) -> bool:
     codepoint = ord(character)
     return 0xac00 <= codepoint <= 0xd7af
+
+
+def _is_latin_extended(character: str) -> bool:
+    codepoint = ord(character)
+    return 0x00c0 <= codepoint <= 0x024f
+
+
+def _is_thai(character: str) -> bool:
+    codepoint = ord(character)
+    return 0x0e00 <= codepoint <= 0x0e7f
 
 
 def _is_cyrillic(character: str) -> bool:

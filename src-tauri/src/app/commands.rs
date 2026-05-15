@@ -132,10 +132,6 @@ pub async fn submit_selection(
         target_language: snapshot_before.target_language,
     };
 
-    let capabilities = runtime_gateway().query_capabilities().await?;
-    let synced_snapshot = sync_runtime_defaults(&app, state.inner_clone(), &capabilities);
-    ensure_ocr_runtime_ready(&synced_snapshot, &capabilities)?;
-
     windows::ensure_overlay_window(&app, &selection, snapshot_before.copy_mode).await?;
 
     let snapshot = state.set_selection(selection);
@@ -150,8 +146,43 @@ pub async fn submit_selection(
     );
     emit_snapshot(&app, &snapshot);
     emit_translation(&app, &state.translation());
-    pipeline::begin_pipeline(&app, state.inner_clone(), settings);
+
+    windows::hide_window(&app, "selector");
     windows::schedule_window_close(&app, "selector", 30);
+
+    let capabilities = match runtime_gateway().query_capabilities().await {
+        Ok(capabilities) => capabilities,
+        Err(error) => {
+            emit_debug(
+                &app,
+                "selector-backend",
+                "selection committed but capabilities query failed",
+                json!({
+                    "error": error,
+                }),
+            );
+            let error_snapshot = state.set_error(error.clone());
+            emit_snapshot(&app, &error_snapshot);
+            return Ok(());
+        }
+    };
+
+    let synced_snapshot = sync_runtime_defaults(&app, state.inner_clone(), &capabilities);
+    if let Err(error) = ensure_ocr_runtime_ready(&synced_snapshot, &capabilities) {
+        emit_debug(
+            &app,
+            "selector-backend",
+            "selection committed but OCR runtime is unavailable",
+            json!({
+                "error": error,
+            }),
+        );
+        let error_snapshot = state.set_error(error.clone());
+        emit_snapshot(&app, &error_snapshot);
+        return Ok(());
+    }
+
+    pipeline::begin_pipeline(&app, state.inner_clone(), settings);
     Ok(())
 }
 

@@ -48,14 +48,15 @@ impl PersistentRuntimeTransport {
         if let Some(stderr) = child.stderr.take() {
             std::thread::spawn(move || {
                 let mut reader = BufReader::new(stderr);
-                let mut line = String::new();
+                let mut line = Vec::new();
 
                 loop {
                     line.clear();
-                    match reader.read_line(&mut line) {
+                    match reader.read_until(b'\n', &mut line) {
                         Ok(0) => break,
                         Ok(_) => {
-                            let message = line.trim();
+                            let message = String::from_utf8_lossy(&line);
+                            let message = message.trim();
                             if !message.is_empty() {
                                 eprintln!("[RangeTranslator:sidecar] {message}");
                             }

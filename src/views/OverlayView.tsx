@@ -7,8 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { getCurrentWindow } from '@tauri-apps/api/window'
-import { call, isTauri, watchEvent } from '../bridge'
+import { call, currentTauriWindow, isTauri, watchEvent } from '../bridge'
 import {
   PANEL_RESIZE_HANDLES,
   PREVIEW_SNAPSHOT,
@@ -36,7 +35,7 @@ export function OverlayView() {
   const [translation, setTranslation] = useState<TranslationPayload>(PREVIEW_TRANSLATION)
   const [overlayScale, setOverlayScale] = useState(1)
   const deferredBlocks = useDeferredValue(translation.blocks)
-  const overlayWindow = useMemo(() => (isTauri() ? getCurrentWindow() : null), [])
+  const overlayWindow = useMemo(() => currentTauriWindow(), [])
   const boundsRef = useRef<SelectionRect | null>(PREVIEW_SNAPSHOT.selection)
   const overlayBoundsSyncArmedRef = useRef(false)
 

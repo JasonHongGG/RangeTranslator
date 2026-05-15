@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "tauri": "tauri",
+    "tauri": "node scripts/tauri.mjs",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:check": "cargo check --manifest-path src-tauri/Cargo.toml"

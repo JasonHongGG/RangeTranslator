@@ -232,6 +232,7 @@ pub fn close_selector_window(app: &AppHandle, state: SharedState) -> Result<(), 
         }),
     );
     emit_snapshot(app, &snapshot);
+    hide_window(app, "selector");
     schedule_window_close(app, "selector", 30);
     Ok(())
 }
@@ -351,6 +352,17 @@ pub fn schedule_window_close(app: &AppHandle, label: &str, delay_ms: u64) {
                 let _ = window.close();
             }
         });
+    });
+}
+
+pub fn hide_window(app: &AppHandle, label: &str) {
+    let app_handle = app.clone();
+    let window_label = label.to_string();
+
+    let _ = app.run_on_main_thread(move || {
+        if let Some(window) = app_handle.get_webview_window(&window_label) {
+            let _ = window.hide();
+        }
     });
 }
 

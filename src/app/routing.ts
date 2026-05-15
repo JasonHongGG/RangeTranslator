@@ -1,5 +1,4 @@
-import { getCurrentWindow } from '@tauri-apps/api/window'
-import { isTauri } from '../bridge'
+import { currentTauriWindowLabel } from '../bridge'
 import type { AppView, RouteInfo } from './constants'
 
 export function selectorOrigin() {
@@ -36,7 +35,7 @@ export function readInjectedView() {
 export function resolveRouteInfo(): RouteInfo {
   const url = new URL(window.location.href)
   const scriptView = readInjectedView()
-  const currentWindowLabel = isTauri() ? getCurrentWindow().label : null
+  const currentWindowLabel = currentTauriWindowLabel()
   const queryView = url.searchParams.get('view')
   const hashView = extractHashView(url.hash)
   const pathView = extractPathView(url.pathname)

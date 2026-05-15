@@ -1,5 +1,6 @@
 use std::{
-    path::PathBuf,
+    fs,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
@@ -20,6 +21,7 @@ pub fn find_runtime_root() -> Result<PathBuf, String> {
     for root in candidate_runtime_roots() {
         if root.join("pyproject.toml").exists() && root.join("range_translator_runtime").exists()
         {
+            cleanup_unused_debug_runtime_copy(&root);
             return Ok(root);
         }
     }
@@ -95,27 +97,67 @@ fn candidate_runtime_roots() -> Vec<PathBuf> {
     if let Ok(custom_root) = std::env::var(RUNTIME_ENV_VAR) {
         let custom_root = custom_root.trim();
         if !custom_root.is_empty() {
-            roots.push(PathBuf::from(custom_root));
+            push_unique(&mut roots, PathBuf::from(custom_root));
         }
     }
 
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(dir) = exe_path.parent() {
-            roots.push(dir.join(RUNTIME_DIR_NAME));
-            if let Some(parent) = dir.parent() {
-                roots.push(parent.join(RUNTIME_DIR_NAME));
-            }
+    if let Ok(current_dir) = std::env::current_dir() {
+        if current_dir
+            .file_name()
+            .map(|name| name == RUNTIME_DIR_NAME)
+            .unwrap_or(false)
+        {
+            push_unique(&mut roots, current_dir.clone());
         }
+
+        push_unique(&mut roots, current_dir.join(RUNTIME_DIR_NAME));
     }
 
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
         let manifest_dir = PathBuf::from(manifest_dir);
         if let Some(workspace_root) = manifest_dir.parent() {
-            roots.push(workspace_root.join(RUNTIME_DIR_NAME));
+            push_unique(&mut roots, workspace_root.join(RUNTIME_DIR_NAME));
+        }
+    }
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(dir) = exe_path.parent() {
+            push_unique(&mut roots, dir.join(RUNTIME_DIR_NAME));
+            if let Some(parent) = dir.parent() {
+                push_unique(&mut roots, parent.join(RUNTIME_DIR_NAME));
+            }
         }
     }
 
     roots
+}
+
+fn push_unique(roots: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if roots.iter().any(|existing| existing == &candidate) {
+        return;
+    }
+    roots.push(candidate);
+}
+
+fn cleanup_unused_debug_runtime_copy(selected_root: &Path) {
+    let Ok(exe_path) = std::env::current_exe() else {
+        return;
+    };
+
+    let Some(exe_dir) = exe_path.parent() else {
+        return;
+    };
+
+    let debug_runtime_root = exe_dir.join(RUNTIME_DIR_NAME);
+    if selected_root == debug_runtime_root {
+        return;
+    }
+
+    if !debug_runtime_root.exists() {
+        return;
+    }
+
+    let _ = fs::remove_dir_all(debug_runtime_root);
 }
 
 fn can_execute(program: &str, args: &[String]) -> bool {

@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     io::Cursor,
     sync::{Arc, OnceLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
@@ -27,6 +27,7 @@ use crate::{
 };
 
 static TRANSLATION_CACHE: OnceLock<Mutex<HashMap<String, AiTranslationResponse>>> = OnceLock::new();
+const AI_RETRY_COOLDOWN: Duration = Duration::from_secs(15);
 
 pub fn begin_pipeline(app: &AppHandle, state: SharedState, settings: PipelineSettings) {
     let (token, snapshot) = state.start_pipeline(settings);
@@ -44,6 +45,8 @@ pub fn begin_pipeline(app: &AppHandle, state: SharedState, settings: PipelineSet
 pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Result<()> {
     let mut last_signature: Option<FrameSignature> = None;
     let mut detected_source_hint: Option<String> = None;
+    let mut ai_retry_after: Option<Instant> = None;
+    let mut ai_error_summary: Option<String> = None;
 
     loop {
         if !state.is_token_active(token) {
@@ -149,6 +152,29 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             continue;
         }
 
+        if let Some(retry_after) = ai_retry_after {
+            let now = Instant::now();
+            if now < retry_after {
+                let remaining = retry_after
+                    .saturating_duration_since(now)
+                    .as_secs()
+                    .max(1);
+                let warning_snapshot = state.set_status_with_error(
+                    RuntimeStatus::Recognizing,
+                    format!("AI unavailable · OCR visible · retry in {remaining}s"),
+                    ai_error_summary
+                        .clone()
+                        .unwrap_or_else(|| "Ollama unavailable; keeping OCR visible.".to_string()),
+                );
+                emit_snapshot(&app, &warning_snapshot);
+                tokio::time::sleep(Duration::from_millis(180)).await;
+                continue;
+            }
+
+            ai_retry_after = None;
+            ai_error_summary = None;
+        }
+
         emit_snapshot(&app, &state.set_status(RuntimeStatus::Translating, "AI"));
         let texts = recognized
             .lines
@@ -228,18 +254,28 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                     response
                 }
                 Err(error) => {
+                    let error_text = error.to_string();
+                    let error_summary = summarize_ai_error(&error_text);
                     emit_debug(
                         &app,
                         "ai-provider",
                         "sidecar translate failed",
                         json!({
-                            "error": error,
+                            "error": error_text,
                             "provider": snapshot.ai_provider,
                             "promptProfile": snapshot.prompt_profile,
                         }),
                     );
-                    let fallback_snapshot =
-                        state.set_status(RuntimeStatus::Recognizing, "AI unavailable · OCR visible");
+                    ai_retry_after = Some(Instant::now() + AI_RETRY_COOLDOWN);
+                    ai_error_summary = Some(error_summary.clone());
+                    let fallback_snapshot = state.set_status_with_error(
+                        RuntimeStatus::Recognizing,
+                        format!(
+                            "AI unavailable · OCR visible · retry in {}s",
+                            AI_RETRY_COOLDOWN.as_secs()
+                        ),
+                        error_summary,
+                    );
                     emit_snapshot(&app, &fallback_snapshot);
                     tokio::time::sleep(Duration::from_millis(180)).await;
                     continue;
@@ -344,6 +380,24 @@ fn build_overlay_block(
         align: TextAlign::Left,
         streaming,
     }
+}
+
+fn summarize_ai_error(error: &str) -> String {
+    let headline = error.lines().next().unwrap_or("AI translation failed").trim();
+
+    if headline.contains("did not produce response headers within") {
+        return "Ollama inference stalled; keeping OCR visible.".to_string();
+    }
+
+    if headline.contains("Failed to reach Ollama endpoint") {
+        return "Ollama endpoint unreachable; keeping OCR visible.".to_string();
+    }
+
+    if headline.contains("Ollama returned HTTP") {
+        return headline.to_string();
+    }
+
+    "AI translation failed; keeping OCR visible.".to_string()
 }
 
 fn encode_frame_png_base64(frame: &crate::capture::CapturedFrame) -> Result<String> {

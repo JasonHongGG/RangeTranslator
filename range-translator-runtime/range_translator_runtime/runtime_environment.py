@@ -7,9 +7,12 @@ from pathlib import Path
 
 
 def configure_process_environment() -> None:
+    _configure_runtime_cache()
     for directory in _candidate_nvidia_bin_dirs():
         _prepend_path(directory)
         _add_dll_directory(directory)
+
+    os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
 
 def _candidate_nvidia_bin_dirs() -> list[Path]:
@@ -33,6 +36,11 @@ def _candidate_nvidia_bin_dirs() -> list[Path]:
             Path("nvidia/cublas/bin"),
             Path("nvidia/cuda_runtime/bin"),
             Path("nvidia/cuda_nvrtc/bin"),
+            Path("nvidia/cufft/bin"),
+            Path("nvidia/curand/bin"),
+            Path("nvidia/cusolver/bin"),
+            Path("nvidia/cusparse/bin"),
+            Path("nvidia/nvjitlink/bin"),
         ):
             candidate = (root / relative).resolve()
             key = str(candidate).lower()
@@ -41,6 +49,13 @@ def _candidate_nvidia_bin_dirs() -> list[Path]:
                 directories.append(candidate)
 
     return directories
+
+
+def _configure_runtime_cache() -> None:
+    runtime_root = Path(__file__).resolve().parents[1]
+    cache_dir = runtime_root / ".runtime" / "paddlex"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(cache_dir))
 
 
 def _prepend_path(directory: Path) -> None:

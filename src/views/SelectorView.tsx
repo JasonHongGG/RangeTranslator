@@ -5,8 +5,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { getCurrentWindow } from '@tauri-apps/api/window'
-import { call, isTauri, watchEvent } from '../bridge'
+import { call, currentTauriWindow, currentTauriWindowLabel, isTauri, watchEvent } from '../bridge'
 import { DEBUG_EVENT, type DebugPayload } from '../app/constants'
 import {
   describeTarget,
@@ -35,8 +34,8 @@ export function SelectorView() {
   const anchorRef = useRef<{ x: number; y: number } | null>(null)
   const dragMoveLoggedRef = useRef(false)
   const lifecycleBusyRef = useRef(false)
-  const selectorWindow = useMemo(() => (isTauri() ? getCurrentWindow() : null), [])
-  const currentWindowLabel = isTauri() ? getCurrentWindow().label : 'browser'
+  const selectorWindow = useMemo(() => currentTauriWindow(), [])
+  const currentWindowLabel = currentTauriWindowLabel() ?? 'browser'
   const injectedView = readInjectedView() ?? 'none'
 
   const selection = useMemo(() => {
@@ -129,7 +128,7 @@ export function SelectorView() {
         height: window.innerHeight,
       },
       tauri: isTauri(),
-      currentWindowLabel: isTauri() ? getCurrentWindow().label : null,
+      currentWindowLabel: currentTauriWindowLabel(),
     })
     if (selectorWindow) {
       void selectorWindow.setFocus().catch(() => {

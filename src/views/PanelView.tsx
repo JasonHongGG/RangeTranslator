@@ -5,8 +5,7 @@ import {
   useMemo,
   useState,
 } from 'react'
-import { getCurrentWindow } from '@tauri-apps/api/window'
-import { call, isTauri, watchEvent } from '../bridge'
+import { call, currentTauriWindow, isTauri, watchEvent } from '../bridge'
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from '../languages'
 import { CompactSelect } from '../components/CompactSelect'
 import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, PREVIEW_SNAPSHOT, type DebugPayload, type ResizeDirection } from '../app/constants'
@@ -32,7 +31,7 @@ export function PanelView() {
   const [sourceLanguage, setSourceLanguage] = useState('auto')
   const [targetLanguage, setTargetLanguage] = useState('zh-TW')
   const [busy, setBusy] = useState(false)
-  const panelWindow = useMemo(() => (isTauri() ? getCurrentWindow() : null), [])
+  const panelWindow = useMemo(() => currentTauriWindow(), [])
 
   const applySnapshot = useEffectEvent((next: RuntimeSnapshot) => {
     startTransition(() => {

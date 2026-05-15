@@ -164,6 +164,19 @@ impl SharedState {
         inner.snapshot.clone()
     }
 
+    pub fn set_status_with_error(
+        &self,
+        status: RuntimeStatus,
+        detail: impl Into<String>,
+        message: impl Into<String>,
+    ) -> RuntimeSnapshot {
+        let mut inner = self.inner.lock();
+        inner.snapshot.status = status;
+        inner.snapshot.status_detail = detail.into();
+        inner.snapshot.last_error = Some(message.into());
+        inner.snapshot.clone()
+    }
+
     pub fn set_model(&self, model: String) -> RuntimeSnapshot {
         let mut inner = self.inner.lock();
         inner.snapshot.model = model;
