@@ -10,6 +10,7 @@ export const PREVIEW_SNAPSHOT: RuntimeSnapshot = {
   aiProvider: 'ollama',
   promptProfile: 'translation.ui_overlay.default',
   panelPinned: true,
+  debugScreenshotMode: false,
   selection: { x: 280, y: 180, width: 764, height: 312 },
   selectorBounds: { x: 0, y: 0, width: 1280, height: 720 },
   copyMode: true,

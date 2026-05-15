@@ -119,6 +119,7 @@ export type RuntimeSnapshot = {
   aiProvider: string
   promptProfile: string
   panelPinned: boolean
+  debugScreenshotMode: boolean
   selection: SelectionRect | null
   selectorBounds: SelectionRect | null
   copyMode: boolean

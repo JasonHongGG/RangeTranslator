@@ -132,7 +132,15 @@ pub async fn submit_selection(
         target_language: snapshot_before.target_language,
     };
 
-    windows::ensure_overlay_window(&app, &selection, snapshot_before.copy_mode).await?;
+    if !snapshot_before.debug_screenshot_mode {
+        windows::ensure_overlay_window(
+            &app,
+            &selection,
+            snapshot_before.copy_mode,
+            true,
+        )
+        .await?;
+    }
 
     let snapshot = state.set_selection(selection);
     emit_debug(
@@ -149,6 +157,19 @@ pub async fn submit_selection(
 
     windows::hide_window(&app, "selector");
     windows::schedule_window_close(&app, "selector", 30);
+
+    if snapshot_before.debug_screenshot_mode {
+        emit_debug(
+            &app,
+            "selector-backend",
+            "selection committed while debug screenshot mode is active",
+            json!({
+                "selection": snapshot.selection,
+                "pipelineStarted": false,
+            }),
+        );
+        return Ok(());
+    }
 
     pipeline::begin_pipeline(&app, state.inner_clone(), settings);
 
@@ -204,11 +225,18 @@ pub async fn start_pipeline(
     state: State<'_, SharedState>,
     settings: PipelineSettings,
 ) -> Result<(), String> {
+    if state.snapshot().debug_screenshot_mode {
+        return Err(
+            "Debug screenshot mode is enabled. Disable it before starting live translation."
+                .to_string(),
+        );
+    }
+
     let selection = windows::selection_or_error(&state.inner_clone())?;
     let capabilities = runtime_gateway().query_capabilities().await?;
     let synced_snapshot = sync_runtime_defaults(&app, state.inner_clone(), &capabilities);
     ensure_ocr_runtime_ready(&synced_snapshot, &capabilities)?;
-    windows::ensure_overlay_window(&app, &selection, state.snapshot().copy_mode).await?;
+    windows::ensure_overlay_window(&app, &selection, state.snapshot().copy_mode, true).await?;
     pipeline::begin_pipeline(&app, state.inner_clone(), settings);
     Ok(())
 }
@@ -276,6 +304,33 @@ pub fn toggle_copy_mode(
             window.set_focus().map_err(|error| error.to_string())?;
         }
     }
+    emit_snapshot(&app, &snapshot);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn toggle_debug_screenshot_mode(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let running_before = state.snapshot().running;
+    if enabled && running_before {
+        let _ = state.stop_pipeline();
+    }
+
+    windows::set_capture_protection(&app, !enabled)?;
+
+    let snapshot = state.set_debug_screenshot_mode(enabled);
+    emit_debug(
+        &app,
+        "panel-backend",
+        "debug screenshot mode toggled",
+        json!({
+            "enabled": enabled,
+            "stoppedRunningPipeline": enabled && running_before,
+        }),
+    );
     emit_snapshot(&app, &snapshot);
     Ok(())
 }

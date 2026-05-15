@@ -12,6 +12,7 @@ import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, PREVIEW_SNAPSHOT, type DebugPayload,
 import { logDebugPayload } from '../app/debug'
 import { labelForStatus, shouldIgnoreWindowDrag, toneForStatus } from '../app/overlay'
 import {
+  IconCamera,
   IconClose,
   IconCrop,
   IconErase,
@@ -94,7 +95,10 @@ export function PanelView() {
     ? `${snapshot.selection.width} x ${snapshot.selection.height}`
     : 'No region'
   const statusTone = toneForStatus(snapshot.status)
-  const statusDetail = snapshot.lastError ?? snapshot.statusDetail
+  const statusDetail = snapshot.lastError
+    ?? (snapshot.debugScreenshotMode
+      ? 'Debug screenshots enabled'
+      : snapshot.statusDetail)
 
   const runCommand = async (action: () => Promise<void>) => {
     if (!isTauri()) {
@@ -165,7 +169,20 @@ export function PanelView() {
       return
     }
 
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'd') {
+      event.preventDefault()
+      void runCommand(() =>
+        call('toggle_debug_screenshot_mode', {
+          enabled: !snapshot.debugScreenshotMode,
+        }),
+      )
+      return
+    }
+
     if ((event.ctrlKey || event.metaKey) && key === 'enter') {
+      if (snapshot.debugScreenshotMode) {
+        return
+      }
       event.preventDefault()
       void runCommand(() =>
         call(snapshot.running ? 'stop_pipeline' : 'start_pipeline', {
@@ -219,9 +236,17 @@ export function PanelView() {
             className={`panel-icon-button panel-icon-button-primary ${
               snapshot.running ? 'panel-icon-button-active' : ''
             }`}
-            title={snapshot.running ? 'Stop live translation' : 'Start live translation'}
-            aria-label={snapshot.running ? 'Stop live translation' : 'Start live translation'}
-            disabled={busy || (!snapshot.running && !snapshot.selection)}
+            title={snapshot.debugScreenshotMode
+              ? 'Disable debug screenshot mode to start live translation'
+              : snapshot.running
+                ? 'Stop live translation'
+                : 'Start live translation'}
+            aria-label={snapshot.debugScreenshotMode
+              ? 'Disable debug screenshot mode to start live translation'
+              : snapshot.running
+                ? 'Stop live translation'
+                : 'Start live translation'}
+            disabled={busy || snapshot.debugScreenshotMode || (!snapshot.running && !snapshot.selection)}
             onClick={() =>
               runCommand(() =>
                 call(snapshot.running ? 'stop_pipeline' : 'start_pipeline', {
@@ -322,6 +347,27 @@ export function PanelView() {
         </div>
 
         <div className="footer-tools" data-no-drag="true">
+          <button
+            type="button"
+            className={`footer-icon ${snapshot.debugScreenshotMode ? 'footer-icon-active' : ''}`}
+            disabled={busy}
+            title={snapshot.debugScreenshotMode
+              ? 'Disable debug screenshot mode and re-enable capture protection'
+              : 'Enable debug screenshot mode for screenshots'}
+            aria-label={snapshot.debugScreenshotMode
+              ? 'Disable debug screenshot mode'
+              : 'Enable debug screenshot mode for screenshots'}
+            aria-pressed={snapshot.debugScreenshotMode}
+            onClick={() =>
+              runCommand(() =>
+                call('toggle_debug_screenshot_mode', {
+                  enabled: !snapshot.debugScreenshotMode,
+                }),
+              )
+            }
+          >
+            <IconCamera />
+          </button>
           <button
             type="button"
             className={`footer-icon ${snapshot.copyMode ? 'footer-icon-active' : ''}`}

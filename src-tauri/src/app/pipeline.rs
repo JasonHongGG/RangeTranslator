@@ -64,6 +64,10 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
 
         emit_snapshot(&app, &state.set_status(RuntimeStatus::Capturing, "Sampling"));
         let frame = capture_region(&selection)?;
+        if !state.is_token_active(token) {
+            break;
+        }
+
         let signature = FrameSignature::from_image(&frame.image);
         if let Some(previous) = last_signature.as_ref() {
             if !signature.is_meaningfully_different(previous) {
@@ -84,6 +88,10 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         })
         .await
         .map_err(anyhow::Error::msg)?;
+        if !state.is_token_active(token) {
+            break;
+        }
+
         if snapshot.source_language == "auto" {
             detected_source_hint = Some(recognized.language.clone());
         }
@@ -291,6 +299,9 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                 }
             }
         };
+        if !state.is_token_active(token) {
+            break;
+        }
 
         let provider_snapshot = state.set_provider_stack(
             recognized.provider_id,

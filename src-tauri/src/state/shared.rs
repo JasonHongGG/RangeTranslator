@@ -192,6 +192,12 @@ impl SharedState {
         inner.snapshot.clone()
     }
 
+    pub fn set_debug_screenshot_mode(&self, enabled: bool) -> RuntimeSnapshot {
+        let mut inner = self.inner.lock();
+        inner.snapshot.debug_screenshot_mode = enabled;
+        inner.snapshot.clone()
+    }
+
     pub fn set_provider_stack(
         &self,
         ocr_provider: String,

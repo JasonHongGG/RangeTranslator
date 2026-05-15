@@ -93,3 +93,13 @@ export function IconPin() {
     </svg>
   )
 }
+
+export function IconCamera() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 8.5h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2Z" />
+      <path d="M9 8.5 10.2 6h3.6L15 8.5" />
+      <path d="M12 11a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Z" />
+    </svg>
+  )
+}

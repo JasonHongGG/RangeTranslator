@@ -5,7 +5,7 @@ use anyhow::Context;
 use serde_json::json;
 use tauri::{
     AppHandle, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewUrl,
-    WebviewWindowBuilder,
+    WebviewWindow, WebviewWindowBuilder,
 };
 
 use crate::{
@@ -18,6 +18,25 @@ use crate::{
 const SELECTOR_INIT_SCRIPT: &str = r#"window.__RANGE_TRANSLATOR_VIEW__ = 'selector';"#;
 static APP_SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 
+fn set_window_capture_protection(
+    window: &WebviewWindow,
+    content_protected: bool,
+) -> Result<(), String> {
+    window
+        .set_content_protected(content_protected)
+        .map_err(|error| error.to_string())
+}
+
+pub fn set_capture_protection(app: &AppHandle, content_protected: bool) -> Result<(), String> {
+    for label in ["panel", "selector", "overlay"] {
+        if let Some(window) = app.get_webview_window(label) {
+            set_window_capture_protection(&window, content_protected)?;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn is_shutting_down() -> bool {
     APP_SHUTTING_DOWN.load(Ordering::SeqCst)
 }
@@ -26,6 +45,7 @@ pub async fn open_selector_window(app: &AppHandle, state: SharedState) -> Result
     use tokio::sync::oneshot;
 
     let bounds = virtual_desktop_bounds().map_err(|error| error.to_string())?;
+    let content_protected = !state.snapshot().debug_screenshot_mode;
     let debug_window_mode = cfg!(debug_assertions);
     let (window_x, window_y, window_width, window_height) =
         (bounds.x, bounds.y, bounds.width, bounds.height);
@@ -73,9 +93,7 @@ pub async fn open_selector_window(app: &AppHandle, state: SharedState) -> Result
             );
 
             if let Some(window) = app_handle.get_webview_window("selector") {
-                window
-                    .set_content_protected(true)
-                    .map_err(|error| error.to_string())?;
+                set_window_capture_protection(&window, content_protected)?;
                 window
                     .set_position(Position::Physical(PhysicalPosition::new(window_x, window_y)))
                     .map_err(|error| error.to_string())?;
@@ -166,9 +184,7 @@ pub async fn open_selector_window(app: &AppHandle, state: SharedState) -> Result
                 }),
             );
 
-            window
-                .set_content_protected(true)
-                .map_err(|error| error.to_string())?;
+            set_window_capture_protection(&window, content_protected)?;
             window
                 .set_position(Position::Physical(PhysicalPosition::new(window_x, window_y)))
                 .map_err(|error| error.to_string())?;
@@ -247,6 +263,7 @@ pub async fn ensure_overlay_window(
     app: &AppHandle,
     selection: &SelectionRect,
     interactive: bool,
+    content_protected: bool,
 ) -> Result<(), String> {
     use tokio::sync::oneshot;
 
@@ -257,9 +274,7 @@ pub async fn ensure_overlay_window(
     app.run_on_main_thread(move || {
         let result: Result<(), String> = (|| {
             if let Some(window) = app_handle.get_webview_window("overlay") {
-                window
-                    .set_content_protected(true)
-                    .map_err(|error| error.to_string())?;
+                set_window_capture_protection(&window, content_protected)?;
                 window
                     .set_visible_on_all_workspaces(true)
                     .map_err(|error| error.to_string())?;
@@ -318,9 +333,7 @@ pub async fn ensure_overlay_window(
             .build()
             .map_err(|error| error.to_string())?;
 
-            window
-                .set_content_protected(true)
-                .map_err(|error| error.to_string())?;
+            set_window_capture_protection(&window, content_protected)?;
             window
                 .set_position(Position::Physical(PhysicalPosition::new(
                     selection.x,

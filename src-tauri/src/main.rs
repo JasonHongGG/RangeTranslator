@@ -106,6 +106,7 @@ fn main() {
             commands::start_pipeline,
             commands::stop_pipeline,
             commands::submit_selection,
+            commands::toggle_debug_screenshot_mode,
             commands::toggle_copy_mode,
             commands::update_overlay_selection,
         ])
