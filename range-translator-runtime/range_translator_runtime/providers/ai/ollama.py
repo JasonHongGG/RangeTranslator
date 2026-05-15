@@ -93,28 +93,32 @@ class OllamaProvider:
             },
         )
 
+        request_payload = {
+            "model": model,
+            "stream": False,
+            "format": "json",
+            "keep_alive": KEEP_ALIVE,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": prompt["system"],
+                },
+                {
+                    "role": "user",
+                    "content": rendered_prompt,
+                },
+            ],
+            "options": {
+                "temperature": 0.1,
+                "top_p": 0.9,
+            },
+        }
+        if model.lower().startswith("qwen3"):
+            request_payload["think"] = False
+
         content = self._chat_json(
             endpoint,
-            {
-                "model": model,
-                "stream": False,
-                "format": "json",
-                "keep_alive": KEEP_ALIVE,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": prompt["system"],
-                    },
-                    {
-                        "role": "user",
-                        "content": rendered_prompt,
-                    },
-                ],
-                "options": {
-                    "temperature": 0.1,
-                    "top_p": 0.9,
-                },
-            },
+            request_payload,
         )
 
         detected_source, translations, confidences = self._extract_translation_batch(

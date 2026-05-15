@@ -150,39 +150,28 @@ pub async fn submit_selection(
     windows::hide_window(&app, "selector");
     windows::schedule_window_close(&app, "selector", 30);
 
-    let capabilities = match runtime_gateway().query_capabilities().await {
-        Ok(capabilities) => capabilities,
-        Err(error) => {
-            emit_debug(
-                &app,
-                "selector-backend",
-                "selection committed but capabilities query failed",
-                json!({
-                    "error": error,
-                }),
-            );
-            let error_snapshot = state.set_error(error.clone());
-            emit_snapshot(&app, &error_snapshot);
-            return Ok(());
-        }
-    };
-
-    let synced_snapshot = sync_runtime_defaults(&app, state.inner_clone(), &capabilities);
-    if let Err(error) = ensure_ocr_runtime_ready(&synced_snapshot, &capabilities) {
-        emit_debug(
-            &app,
-            "selector-backend",
-            "selection committed but OCR runtime is unavailable",
-            json!({
-                "error": error,
-            }),
-        );
-        let error_snapshot = state.set_error(error.clone());
-        emit_snapshot(&app, &error_snapshot);
-        return Ok(());
-    }
-
     pipeline::begin_pipeline(&app, state.inner_clone(), settings);
+
+    let app_handle = app.clone();
+    let shared_state = state.inner_clone();
+    tauri::async_runtime::spawn(async move {
+        match runtime_gateway().query_capabilities().await {
+            Ok(capabilities) => {
+                sync_runtime_defaults(&app_handle, shared_state, &capabilities);
+            }
+            Err(error) => {
+                emit_debug(
+                    &app_handle,
+                    "selector-backend",
+                    "selection committed; capability sync moved off hot path and failed",
+                    json!({
+                        "error": error,
+                    }),
+                );
+            }
+        }
+    });
+
     Ok(())
 }
 

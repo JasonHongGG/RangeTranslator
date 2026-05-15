@@ -24,6 +24,7 @@ fn main() {
         .manage(state)
         .setup(|app| {
             if let Some(window) = app.get_webview_window("panel") {
+                window.set_content_protected(true)?;
                 window.set_always_on_top(true)?;
             }
             Ok(())

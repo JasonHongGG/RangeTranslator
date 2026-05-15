@@ -10,6 +10,7 @@ from typing import Any
 
 
 DETECTION_MODEL_NAME = "PP-OCRv5_mobile_det"
+AUTO_ACCEPT_SCORE = 8.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,12 +76,41 @@ class PaddleOcrProvider:
                 best_score = score
                 best_language = group.resolved_tag
                 best_lines = lines
+            if self._should_accept_candidate(
+                lines,
+                score,
+                requested_source,
+                hint_language,
+            ):
+                return {
+                    "providerId": self.id,
+                    "language": group.resolved_tag,
+                    "lines": lines,
+                }
 
         return {
             "providerId": self.id,
             "language": best_language,
             "lines": best_lines,
         }
+
+    def _should_accept_candidate(
+        self,
+        lines: list[dict[str, Any]],
+        score: float,
+        requested_source: str,
+        hint_language: str | None,
+    ) -> bool:
+        if not lines:
+            return False
+
+        if requested_source.lower() != "auto":
+            return True
+
+        if hint_language:
+            return True
+
+        return score >= AUTO_ACCEPT_SCORE
 
     def _load_support(self) -> _RuntimeSupport:
         try:
@@ -190,8 +220,8 @@ class PaddleOcrProvider:
         groups: list[_LanguageGroup] = []
 
         family_fallbacks = [
-            "en-US",
             "ja-JP",
+            "en-US",
             "ko-KR",
             "zh-Hans",
             "fr-FR",

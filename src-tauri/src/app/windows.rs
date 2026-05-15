@@ -74,6 +74,9 @@ pub async fn open_selector_window(app: &AppHandle, state: SharedState) -> Result
 
             if let Some(window) = app_handle.get_webview_window("selector") {
                 window
+                    .set_content_protected(true)
+                    .map_err(|error| error.to_string())?;
+                window
                     .set_position(Position::Physical(PhysicalPosition::new(window_x, window_y)))
                     .map_err(|error| error.to_string())?;
                 window
@@ -164,6 +167,9 @@ pub async fn open_selector_window(app: &AppHandle, state: SharedState) -> Result
             );
 
             window
+                .set_content_protected(true)
+                .map_err(|error| error.to_string())?;
+            window
                 .set_position(Position::Physical(PhysicalPosition::new(window_x, window_y)))
                 .map_err(|error| error.to_string())?;
             window
@@ -252,6 +258,9 @@ pub async fn ensure_overlay_window(
         let result: Result<(), String> = (|| {
             if let Some(window) = app_handle.get_webview_window("overlay") {
                 window
+                    .set_content_protected(true)
+                    .map_err(|error| error.to_string())?;
+                window
                     .set_visible_on_all_workspaces(true)
                     .map_err(|error| error.to_string())?;
                 window
@@ -309,6 +318,9 @@ pub async fn ensure_overlay_window(
             .build()
             .map_err(|error| error.to_string())?;
 
+            window
+                .set_content_protected(true)
+                .map_err(|error| error.to_string())?;
             window
                 .set_position(Position::Physical(PhysicalPosition::new(
                     selection.x,

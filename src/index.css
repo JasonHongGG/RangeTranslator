@@ -765,9 +765,11 @@ svg {
   position: absolute;
   border-radius: 6px;
   padding: 0;
-  font-family: var(--font-display);
-  line-height: 1;
-  letter-spacing: -0.03em;
+  display: flex;
+  align-items: center;
+  font-family: 'Segoe UI', 'Microsoft JhengHei UI', 'Yu Gothic UI', sans-serif;
+  line-height: 1.04;
+  letter-spacing: 0;
   box-shadow: none;
   backdrop-filter: none;
   white-space: pre-wrap;

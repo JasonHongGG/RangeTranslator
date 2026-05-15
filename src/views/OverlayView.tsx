@@ -21,7 +21,6 @@ import {
   sameSelection,
   shouldIgnoreWindowDrag,
   toLogicalPixels,
-  withAlpha,
 } from '../app/overlay'
 import type {
   RuntimeSnapshot,
@@ -295,7 +294,7 @@ export function OverlayView() {
             width: toLogicalPixels(block.width, overlayScale),
             height: Math.max(1, toLogicalPixels(block.height, overlayScale)),
             color: block.foreground,
-            background: withAlpha(block.background, 0.76),
+            background: block.background,
             fontSize: Math.max(10, block.fontSize / Math.max(overlayScale, 1)),
           }}
         >

@@ -103,51 +103,20 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         );
         emit_snapshot(&app, &provider_snapshot);
 
-        let ocr_payload = TranslationPayload {
-            generation: token,
-            selection: Some(selection.clone()),
-            source_language: snapshot.source_language.clone(),
-            target_language: snapshot.target_language.clone(),
-            detected_source: Some(recognized.language.clone()),
-            captured_at: Some(captured_at.clone()),
-            unchanged: false,
-            visible_layer: if base_blocks.is_empty() {
-                VisibleLayer::None
-            } else {
-                VisibleLayer::Ocr
-            },
-            provider: recognized.provider_id.clone(),
-            prompt_profile: snapshot.prompt_profile.clone(),
-            blocks: base_blocks.clone(),
-        };
-
-        let ocr_snapshot = state.set_translation(ocr_payload.clone());
-        emit_snapshot(&app, &ocr_snapshot);
-        emit_translation(&app, &ocr_payload);
-
-        emit_translation_partial(
-            &app,
-            &TranslationPartialPayload {
-                generation: token,
-                selection: Some(selection.clone()),
-                source_language: snapshot.source_language.clone(),
-                target_language: snapshot.target_language.clone(),
-                detected_source: Some(recognized.language.clone()),
-                captured_at: Some(captured_at.clone()),
-                visible_layer: if base_blocks.is_empty() {
-                    VisibleLayer::None
-                } else {
-                    VisibleLayer::Ocr
-                },
-                provider: recognized.provider_id.clone(),
-                prompt_profile: snapshot.prompt_profile.clone(),
-                stage: PartialUpdateStage::Ocr,
-                complete: false,
-                blocks: base_blocks.clone(),
-            },
-        );
-
         if base_blocks.is_empty() {
+            emit_ocr_payload(
+                &app,
+                &state,
+                token,
+                &selection,
+                &snapshot.source_language,
+                &snapshot.target_language,
+                Some(recognized.language.clone()),
+                Some(captured_at.clone()),
+                recognized.provider_id.clone(),
+                snapshot.prompt_profile.clone(),
+                base_blocks.clone(),
+            );
             tokio::time::sleep(Duration::from_millis(180)).await;
             continue;
         }
@@ -155,6 +124,19 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         if let Some(retry_after) = ai_retry_after {
             let now = Instant::now();
             if now < retry_after {
+                emit_ocr_payload(
+                    &app,
+                    &state,
+                    token,
+                    &selection,
+                    &snapshot.source_language,
+                    &snapshot.target_language,
+                    Some(recognized.language.clone()),
+                    Some(captured_at.clone()),
+                    recognized.provider_id.clone(),
+                    snapshot.prompt_profile.clone(),
+                    base_blocks.clone(),
+                );
                 let remaining = retry_after
                     .saturating_duration_since(now)
                     .as_secs()
@@ -174,6 +156,20 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             ai_retry_after = None;
             ai_error_summary = None;
         }
+
+        emit_ocr_payload(
+            &app,
+            &state,
+            token,
+            &selection,
+            &snapshot.source_language,
+            &snapshot.target_language,
+            Some(recognized.language.clone()),
+            Some(captured_at.clone()),
+            recognized.provider_id.clone(),
+            snapshot.prompt_profile.clone(),
+            base_blocks.clone(),
+        );
 
         emit_snapshot(&app, &state.set_status(RuntimeStatus::Translating, "AI"));
         let texts = recognized
@@ -268,6 +264,19 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                     );
                     ai_retry_after = Some(Instant::now() + AI_RETRY_COOLDOWN);
                     ai_error_summary = Some(error_summary.clone());
+                    emit_ocr_payload(
+                        &app,
+                        &state,
+                        token,
+                        &selection,
+                        &snapshot.source_language,
+                        &snapshot.target_language,
+                        Some(recognized.language.clone()),
+                        Some(captured_at.clone()),
+                        recognized.provider_id.clone(),
+                        snapshot.prompt_profile.clone(),
+                        base_blocks.clone(),
+                    );
                     let fallback_snapshot = state.set_status_with_error(
                         RuntimeStatus::Recognizing,
                         format!(
@@ -373,13 +382,68 @@ fn build_overlay_block(
         y: line.rect.y,
         width: line.rect.width.max(1),
         height: line.rect.height.max(1),
-        font_size: (line.rect.height as f32 * 0.92).clamp(10.0, 48.0),
+        font_size: (line.rect.height as f32 * 0.64).clamp(9.0, 42.0),
         confidence: line.confidence,
         foreground,
         background,
         align: TextAlign::Left,
         streaming,
     }
+}
+
+fn emit_ocr_payload(
+    app: &AppHandle,
+    state: &SharedState,
+    generation: u64,
+    selection: &crate::models::SelectionRect,
+    source_language: &str,
+    target_language: &str,
+    detected_source: Option<String>,
+    captured_at: Option<String>,
+    provider: String,
+    prompt_profile: String,
+    blocks: Vec<OverlayBlock>,
+) {
+    let visible_layer = if blocks.is_empty() {
+        VisibleLayer::None
+    } else {
+        VisibleLayer::Ocr
+    };
+
+    let payload = TranslationPayload {
+        generation,
+        selection: Some(selection.clone()),
+        source_language: source_language.to_string(),
+        target_language: target_language.to_string(),
+        detected_source: detected_source.clone(),
+        captured_at: captured_at.clone(),
+        unchanged: false,
+        visible_layer,
+        provider: provider.clone(),
+        prompt_profile: prompt_profile.clone(),
+        blocks: blocks.clone(),
+    };
+
+    let snapshot = state.set_translation(payload.clone());
+    emit_snapshot(app, &snapshot);
+    emit_translation(app, &payload);
+    emit_translation_partial(
+        app,
+        &TranslationPartialPayload {
+            generation,
+            selection: Some(selection.clone()),
+            source_language: source_language.to_string(),
+            target_language: target_language.to_string(),
+            detected_source,
+            captured_at,
+            visible_layer,
+            provider,
+            prompt_profile,
+            stage: PartialUpdateStage::Ocr,
+            complete: false,
+            blocks,
+        },
+    );
 }
 
 fn summarize_ai_error(error: &str) -> String {
