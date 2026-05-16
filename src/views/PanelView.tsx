@@ -11,20 +11,10 @@ import { CompactSelect } from '../components/CompactSelect'
 import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, PREVIEW_SNAPSHOT, type DebugPayload, type ResizeDirection } from '../app/constants'
 import { logDebugPayload } from '../app/debug'
 import { labelForStatus, shouldIgnoreWindowDrag, toneForStatus } from '../app/overlay'
-import {
-  IconCamera,
-  IconClose,
-  IconCrop,
-  IconErase,
-  IconMinimize,
-  IconPause,
-  IconPin,
-  IconPlay,
-  IconPointer,
-  IconScan,
-  IconTranslate,
-  IconWave,
-} from '../ui/icons'
+
+import { FiX, FiMinus, FiPlay, FiPause, FiCrop, FiMousePointer, FiCamera, FiGlobe, FiMic, FiArrowRight } from "react-icons/fi";
+import { RiPushpinLine } from "react-icons/ri";
+
 import type { RuntimeSnapshot } from '../types'
 
 export function PanelView() {
@@ -95,10 +85,6 @@ export function PanelView() {
     ? `${snapshot.selection.width} x ${snapshot.selection.height}`
     : 'No region'
   const statusTone = toneForStatus(snapshot.status)
-  const statusDetail = snapshot.lastError
-    ?? (snapshot.debugScreenshotMode
-      ? 'Debug screenshots enabled'
-      : snapshot.statusDetail)
 
   const runCommand = async (action: () => Promise<void>) => {
     if (!isTauri()) {
@@ -206,7 +192,7 @@ export function PanelView() {
   }, [])
 
   return (
-    <main className="panel-window" onPointerDown={startDrag}>
+    <main className="panel-window main-layout" onPointerDown={startDrag}>
       {PANEL_RESIZE_HANDLES.map((handle) => (
         <button
           key={handle.direction}
@@ -217,58 +203,15 @@ export function PanelView() {
         ></button>
       ))}
 
-      <header className="panel-header">
-        <div className="brand-lockup" data-tauri-drag-region>
-          <span className="brand-mark" aria-hidden="true">
-            <IconScan />
-          </span>
-          <div className="brand-copy">
-            <strong>RangeTranslator</strong>
-            <span>live</span>
-          </div>
+      <header className="panel-header" data-tauri-drag-region>
+        <div className="header-status-area">
+          <span className={`status-dot panel-status-rail-${statusTone}`}></span>
+          <span>{labelForStatus(snapshot.status)}</span>
         </div>
 
-        <div className="panel-drag-spacer" data-tauri-drag-region aria-hidden="true"></div>
+        <div className="panel-drag-spacer" aria-hidden="true"></div>
 
         <div className="panel-actions" data-no-drag="true">
-          <button
-            type="button"
-            className={`panel-icon-button panel-icon-button-primary ${
-              snapshot.running ? 'panel-icon-button-active' : ''
-            }`}
-            title={snapshot.debugScreenshotMode
-              ? 'Disable debug screenshot mode to start live translation'
-              : snapshot.running
-                ? 'Stop live translation'
-                : 'Start live translation'}
-            aria-label={snapshot.debugScreenshotMode
-              ? 'Disable debug screenshot mode to start live translation'
-              : snapshot.running
-                ? 'Stop live translation'
-                : 'Start live translation'}
-            disabled={busy || snapshot.debugScreenshotMode || (!snapshot.running && !snapshot.selection)}
-            onClick={() =>
-              runCommand(() =>
-                call(snapshot.running ? 'stop_pipeline' : 'start_pipeline', {
-                  settings: { sourceLanguage, targetLanguage },
-                }),
-              )
-            }
-          >
-            {snapshot.running ? <IconPause /> : <IconPlay />}
-          </button>
-
-          <button
-            type="button"
-            className="panel-icon-button"
-            title="Select screen region"
-            aria-label="Select screen region"
-            disabled={busy}
-            onClick={() => runCommand(() => call('open_selector_window'))}
-          >
-            <IconCrop />
-          </button>
-
           <button
             type="button"
             className={`panel-icon-button ${snapshot.panelPinned ? 'panel-icon-button-active' : ''}`}
@@ -282,7 +225,7 @@ export function PanelView() {
               )
             }
           >
-            <IconPin />
+            <RiPushpinLine style={{ width: 14, height: 14 }} />
           </button>
 
           <span className="panel-actions-divider" aria-hidden="true"></span>
@@ -293,7 +236,7 @@ export function PanelView() {
             aria-label="Minimize"
             onClick={() => runCommand(() => call('panel_minimize'))}
           >
-            <IconMinimize />
+            <FiMinus style={{ width: 14, height: 14 }} />
           </button>
           <button
             type="button"
@@ -301,63 +244,105 @@ export function PanelView() {
             aria-label="Close"
             onClick={() => runCommand(() => call('panel_close'))}
           >
-            <IconClose />
+            <FiX style={{ width: 14, height: 14 }} />
           </button>
         </div>
       </header>
 
-      <section className="panel-fields">
+      <section className="language-switch-area" data-tauri-drag-region>
         <CompactSelect
-          label="Source"
-          icon={<IconWave />}
+          label=""
+          icon={<FiMic style={{ width: 14, height: 14 }} />}
           value={sourceLanguage}
           disabled={snapshot.running || busy}
           options={SOURCE_LANGUAGES}
           onChange={setSourceLanguage}
           menuSide="bottom"
         />
+        <FiArrowRight className="language-arrow" style={{ width: 14, height: 14, flexShrink: 0 }} />
         <CompactSelect
-          label="Target"
-          icon={<IconTranslate />}
+          label=""
+          icon={<FiGlobe style={{ width: 14, height: 14 }} />}
           value={targetLanguage}
           disabled={snapshot.running || busy}
           options={TARGET_LANGUAGES}
           onChange={setTargetLanguage}
-          menuSide="top"
+          menuSide="bottom"
         />
       </section>
 
-      <footer className="panel-footer">
-        <div
-          className={`panel-status-rail panel-status-rail-${statusTone}`}
-          data-tauri-drag-region
+      <section className="core-action-area" data-tauri-drag-region>
+        <button
+          type="button"
+          className={`main-action-btn ${snapshot.running ? 'active' : ''}`}
+          data-no-drag="true"
+          title={snapshot.debugScreenshotMode
+            ? 'Disable debug screenshot mode to start live translation'
+            : snapshot.running
+              ? 'Stop live translation'
+              : 'Start live translation'}
+          disabled={busy || snapshot.debugScreenshotMode || (!snapshot.running && !snapshot.selection)}
+          onClick={() =>
+            runCommand(() =>
+              call(snapshot.running ? 'stop_pipeline' : 'start_pipeline', {
+                settings: { sourceLanguage, targetLanguage },
+              }),
+            )
+          }
         >
-          <span className="status-dot"></span>
-          <span className="panel-status-copy">{labelForStatus(snapshot.status)}</span>
-          <span className="panel-status-divider" aria-hidden="true"></span>
-          <span
-            className={`panel-region-copy ${
-              snapshot.selection ? 'panel-region-copy-active' : ''
-            }`}
-          >
-            {selectionLabel}
-          </span>
-          <span className="panel-status-divider" aria-hidden="true"></span>
-          <span className="panel-status-detail">{statusDetail}</span>
-        </div>
+          {snapshot.running ? <FiPause size={36} /> : <FiPlay size={36} style={{ marginLeft: 4 }} />}
+        </button>
 
-        <div className="footer-tools" data-no-drag="true">
+        <div className="region-setup-area" data-no-drag="true">
+          {!snapshot.selection ? (
+             <button
+              type="button"
+              className="crop-main-btn"
+              title="Select screen region"
+              disabled={busy}
+              onClick={() => runCommand(() => call('open_selector_window'))}
+            >
+              <FiCrop size={16} /> Set Region
+            </button>
+          ) : (
+            <div className="region-chip">
+              <FiCrop size={14} style={{ opacity: 0.6 }} />
+              <span>{selectionLabel}</span>
+              <button
+                className="region-chip-clear"
+                title="Clear current region"
+                onClick={() => runCommand(() => call('clear_selection'))}
+                disabled={busy}
+              >
+                <FiX size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <footer className="advanced-footer" data-tauri-drag-region>
+        <div data-no-drag="true" style={{ display: 'flex', gap: '8px' }}>
           <button
             type="button"
-            className={`footer-icon ${snapshot.debugScreenshotMode ? 'footer-icon-active' : ''}`}
+            className={`ghost-icon-btn ${snapshot.copyMode ? 'active' : ''}`}
+            disabled={busy || !snapshot.selection}
+            title={snapshot.copyMode ? 'Enable mouse passthrough' : 'Disable mouse passthrough'}
+            onClick={() =>
+              runCommand(() =>
+                call('toggle_copy_mode', { enabled: !snapshot.copyMode }),
+              )
+            }
+          >
+            <FiMousePointer size={18} />
+          </button>
+          <button
+            type="button"
+            className={`ghost-icon-btn ${snapshot.debugScreenshotMode ? 'active' : ''}`}
             disabled={busy}
             title={snapshot.debugScreenshotMode
-              ? 'Disable debug screenshot mode and re-enable capture protection'
-              : 'Enable debug screenshot mode for screenshots'}
-            aria-label={snapshot.debugScreenshotMode
               ? 'Disable debug screenshot mode'
-              : 'Enable debug screenshot mode for screenshots'}
-            aria-pressed={snapshot.debugScreenshotMode}
+              : 'Enable debug screenshot mode'}
             onClick={() =>
               runCommand(() =>
                 call('toggle_debug_screenshot_mode', {
@@ -366,36 +351,7 @@ export function PanelView() {
               )
             }
           >
-            <IconCamera />
-          </button>
-          <button
-            type="button"
-            className={`footer-icon ${snapshot.copyMode ? 'footer-icon-active' : ''}`}
-            disabled={busy || !snapshot.selection}
-            title={snapshot.copyMode ? 'Enable mouse passthrough' : 'Disable mouse passthrough'}
-            aria-label={
-              snapshot.copyMode
-                ? 'Enable mouse passthrough'
-                : 'Disable mouse passthrough and allow overlay editing'
-            }
-            aria-pressed={snapshot.copyMode}
-            onClick={() =>
-              runCommand(() =>
-                call('toggle_copy_mode', { enabled: !snapshot.copyMode }),
-              )
-            }
-          >
-            <IconPointer />
-          </button>
-          <button
-            type="button"
-            className="footer-icon"
-            disabled={busy || !snapshot.selection}
-            title="Clear current region"
-            aria-label="Clear selection"
-            onClick={() => runCommand(() => call('clear_selection'))}
-          >
-            <IconErase />
+            <FiCamera size={18} />
           </button>
         </div>
       </footer>

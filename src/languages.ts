@@ -14,7 +14,7 @@ const SHARED = [
 ] as const
 
 export const SOURCE_LANGUAGES = [
-  { code: 'auto', label: 'Auto detect', nativeLabel: 'Auto detect' },
+  { code: 'auto', label: 'Auto detect', nativeLabel: 'Auto' },
   ...SHARED,
 ]
 

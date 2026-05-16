@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { FiChevronDown, FiCheck } from "react-icons/fi";
 
 type SelectOption = {
   code: string
@@ -88,7 +89,7 @@ export function CompactSelect({
         <span className="compact-select-label">{label}</span>
         <span className="compact-select-current">{activeOption?.nativeLabel ?? value}</span>
         <span className="compact-select-caret">
-          <IconChevron />
+          <FiChevronDown />
         </span>
       </button>
 
@@ -124,7 +125,7 @@ export function CompactSelect({
 
                 {active ? (
                   <span className="compact-select-option-check">
-                    <IconCheck />
+                    <FiCheck />
                   </span>
                 ) : null}
               </button>
@@ -133,21 +134,5 @@ export function CompactSelect({
         </div>
       ) : null}
     </div>
-  )
-}
-
-function IconChevron() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="m7 10 5 5 5-5" />
-    </svg>
-  )
-}
-
-function IconCheck() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="m5 12 4 4 10-10" />
-    </svg>
   )
 }
