@@ -116,7 +116,7 @@ svg {
   min-height: 100vh;
   padding: 10px;
   border: 1px solid var(--border-soft);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.7) 0%, rgba(240, 245, 255, 0.7) 60%, rgba(220, 230, 250, 0.8) 100%);
+  background: linear-gradient(180deg, rgba(254, 250, 227, 0.85) 0%, rgba(240, 245, 255, 0.85) 45%, rgba(220, 230, 250, 0.95) 100%);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   display: flex;
@@ -132,7 +132,7 @@ svg {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 10% 12%, rgba(255, 230, 0, 0.15), transparent 34%),
+    radial-gradient(circle at 20% 10%, rgba(255, 225, 0, 0.22), transparent 45%),
     radial-gradient(circle at 82% 100%, rgba(30, 112, 233, 0.1), transparent 38%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 60%);
   pointer-events: none;
@@ -846,12 +846,10 @@ svg {
   width: 90px;
   height: 90px;
   border-radius: 50%;
-  background: var(--accent);
-  color: white;
-  display: flex;
+  background: rgba(240, 248, 255, 0.7); backdrop-filter: blur(12px); border: 2px solid rgba(255, 255, 255, 0.8); color: var(--ink-soft); display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 12px 30px rgba(30, 112, 233, 0.3);
+  box-shadow: 0 12px 30px rgba(107, 175, 255, 0.2);
   transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
   position: relative;
 }
@@ -859,13 +857,15 @@ svg {
 
 .main-action-btn:hover {
   transform: scale(1.05);
-  background: var(--accent-strong);
-  box-shadow: 0 16px 40px rgba(30, 112, 233, 0.4);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 16px 40px rgba(107, 175, 255, 0.3);
 }
 
 .main-action-btn.active {
-  background: var(--danger);
-  box-shadow: 0 0 0 0 rgba(235, 79, 57, 0.7);
+  background: rgba(255, 230, 230, 0.8);
+  color: var(--danger);
+  border: 2px solid rgba(255, 200, 200, 0.9);
+  box-shadow: 0 0 0 0 rgba(235, 79, 57, 0.4);
   animation: pulse-ring 2s infinite cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -924,7 +924,7 @@ svg {
   transition: background 0.2s;
 }
 .region-chip-clear:hover { background: rgba(235, 79, 57, 0.1); }
-.region-chip-clear svg { width: 14px; height: 14px; }
+.region-chip-clear svg { width: 14px !important; height: 14px !important; }
 
 .advanced-footer {
   display: flex;
@@ -1021,4 +1021,63 @@ svg {
 .compact-select-caret svg {
   width: 16px;
   height: 16px;
+}
+
+/* Status dot tones */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--ink-faint); /* default idle */
+}
+.panel-status-rail-ready .status-dot {
+  background: rgba(107, 175, 255, 0.5);
+  box-shadow: none;
+}
+.panel-status-rail-live .status-dot,
+.panel-status-rail-recognizing .status-dot,
+.panel-status-rail-translating .status-dot {
+  background: var(--accent-cool);
+  box-shadow: 0 0 10px rgba(107, 175, 255, 0.6);
+  animation: dot-breathe 1.5s infinite alternate;
+}
+.panel-status-rail-danger .status-dot {
+  background: var(--danger);
+  box-shadow: 0 0 10px rgba(235, 79, 57, 0.6);
+}
+
+@keyframes dot-breathe {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.3); opacity: 1; }
+}
+
+/* Fix panel pin active color */
+.panel-icon-button-active {
+  background: rgba(30, 112, 233, 0.15) !important;
+  color: var(--accent) !important;
+  border-color: rgba(30, 112, 233, 0.25) !important;
+}
+
+
+/* Adjust panel icon active state explicitly */
+button.panel-icon-button.panel-icon-button-active {
+  background: rgba(43, 142, 237, 0.12);
+  color: var(--accent);
+  border-color: rgba(43, 142, 237, 0.2);
+}
+
+
+.region-chip svg { width: 12px !important; height: 12px !important; }
+
+/* Prevent accidental text selection rendering as dark blue boxes */
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Allow text selection only in specific input areas if needed later */
+input, textarea {
+  user-select: auto;
+  -webkit-user-select: auto;
 }

@@ -12,7 +12,7 @@ import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, PREVIEW_SNAPSHOT, type DebugPayload,
 import { logDebugPayload } from '../app/debug'
 import { labelForStatus, shouldIgnoreWindowDrag, toneForStatus } from '../app/overlay'
 
-import { FiX, FiMinus, FiPlay, FiPause, FiCrop, FiMousePointer, FiCamera, FiGlobe, FiMic, FiArrowRight } from "react-icons/fi";
+import { FiX, FiMinus, FiPlay, FiPause, FiCrop, FiMousePointer, FiCamera, FiGlobe, FiType, FiArrowRight } from "react-icons/fi";
 import { RiPushpinLine } from "react-icons/ri";
 
 import type { RuntimeSnapshot } from '../types'
@@ -203,9 +203,9 @@ export function PanelView() {
         ></button>
       ))}
 
-      <header className="panel-header" data-tauri-drag-region>
+      <header className={`panel-header panel-status-rail-${statusTone}`} data-tauri-drag-region>
         <div className="header-status-area">
-          <span className={`status-dot panel-status-rail-${statusTone}`}></span>
+          <span className="status-dot"></span>
           <span>{labelForStatus(snapshot.status)}</span>
         </div>
 
@@ -252,7 +252,7 @@ export function PanelView() {
       <section className="language-switch-area" data-tauri-drag-region>
         <CompactSelect
           label=""
-          icon={<FiMic style={{ width: 14, height: 14 }} />}
+          icon={<FiType style={{ width: 14, height: 14 }} />}
           value={sourceLanguage}
           disabled={snapshot.running || busy}
           options={SOURCE_LANGUAGES}
@@ -306,7 +306,7 @@ export function PanelView() {
             </button>
           ) : (
             <div className="region-chip">
-              <FiCrop size={14} style={{ opacity: 0.6 }} />
+              <FiCrop size={12} style={{ opacity: 0.5, marginTop: '2px' }} />
               <span>{selectionLabel}</span>
               <button
                 className="region-chip-clear"
@@ -341,7 +341,7 @@ export function PanelView() {
             className={`ghost-icon-btn ${snapshot.debugScreenshotMode ? 'active' : ''}`}
             disabled={busy}
             title={snapshot.debugScreenshotMode
-              ? 'Disable debug screenshot mode'
+              ? 'Disable debug screenshot mode (Translation Pipeline Paused)'
               : 'Enable debug screenshot mode'}
             onClick={() =>
               runCommand(() =>
