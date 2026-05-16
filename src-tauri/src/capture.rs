@@ -16,16 +16,6 @@ pub struct CapturedFrame {
     pub image: RgbaImage,
 }
 
-impl CapturedFrame {
-    pub fn width(&self) -> u32 {
-        self.image.width()
-    }
-
-    pub fn height(&self) -> u32 {
-        self.image.height()
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct DesktopBounds {
     pub x: i32,

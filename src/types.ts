@@ -7,6 +7,8 @@ export type RuntimeStatus =
   | 'ready'
   | 'error'
 
+export type OverlayInteractionMode = 'passThrough' | 'selectText' | 'dragWindow'
+
 export type VisibleLayer = 'none' | 'ocr' | 'translation'
 
 export type TextAlign = 'left' | 'center' | 'right'
@@ -118,11 +120,12 @@ export type RuntimeSnapshot = {
   ocrProvider: string
   aiProvider: string
   promptProfile: string
+  aiTranslationEnabled: boolean
   panelPinned: boolean
   debugScreenshotMode: boolean
   selection: SelectionRect | null
   selectorBounds: SelectionRect | null
-  copyMode: boolean
+  overlayMode: OverlayInteractionMode
   endpoint: string
   model: string
   generation: number

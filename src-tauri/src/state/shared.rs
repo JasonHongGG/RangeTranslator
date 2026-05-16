@@ -4,8 +4,8 @@ use chrono::{SecondsFormat, Utc};
 use parking_lot::Mutex;
 
 use crate::models::{
-    PipelineSettings, RuntimeSnapshot, RuntimeStatus, SelectionRect, TranslationPayload,
-    VisibleLayer,
+    OverlayInteractionMode, PipelineSettings, RuntimeSnapshot, RuntimeStatus,
+    SelectionRect, TranslationPayload, VisibleLayer,
 };
 
 #[derive(Clone)]
@@ -132,6 +132,38 @@ impl SharedState {
         (inner.pipeline_token, inner.snapshot.clone())
     }
 
+    pub fn restart_pipeline_with_selection(
+        &self,
+        selection: SelectionRect,
+    ) -> (u64, RuntimeSnapshot, TranslationPayload) {
+        let mut inner = self.inner.lock();
+        inner.pipeline_token = inner.pipeline_token.saturating_add(1);
+        inner.snapshot.running = true;
+        inner.snapshot.selection = Some(selection.clone());
+        inner.snapshot.selector_bounds = None;
+        inner.snapshot.generation = inner.pipeline_token;
+        inner.snapshot.visible_layer = VisibleLayer::None;
+        inner.snapshot.block_count = 0;
+        inner.snapshot.last_updated = None;
+        inner.snapshot.last_detected_source = None;
+        inner.snapshot.last_error = None;
+        inner.snapshot.status = RuntimeStatus::Capturing;
+        inner.snapshot.status_detail = "Sampling".to_string();
+        inner.translation = TranslationPayload {
+            generation: inner.pipeline_token,
+            selection: Some(selection),
+            source_language: inner.snapshot.source_language.clone(),
+            target_language: inner.snapshot.target_language.clone(),
+            visible_layer: VisibleLayer::None,
+            ..TranslationPayload::default()
+        };
+        (
+            inner.pipeline_token,
+            inner.snapshot.clone(),
+            inner.translation.clone(),
+        )
+    }
+
     pub fn stop_pipeline(&self) -> RuntimeSnapshot {
         let mut inner = self.inner.lock();
         inner.pipeline_token = inner.pipeline_token.saturating_add(1);
@@ -143,6 +175,14 @@ impl SharedState {
             inner.snapshot.status = RuntimeStatus::Idle;
             inner.snapshot.status_detail = "Ready".to_string();
         }
+        inner.snapshot.clone()
+    }
+
+    pub fn suspend_pipeline_for_debug(&self) -> RuntimeSnapshot {
+        let mut inner = self.inner.lock();
+        inner.pipeline_token = inner.pipeline_token.saturating_add(1);
+        inner.snapshot.running = false;
+        inner.snapshot.last_error = None;
         inner.snapshot.clone()
     }
 
@@ -180,15 +220,21 @@ impl SharedState {
         inner.snapshot.clone()
     }
 
-    pub fn set_copy_mode(&self, enabled: bool) -> RuntimeSnapshot {
+    pub fn set_overlay_mode(&self, mode: OverlayInteractionMode) -> RuntimeSnapshot {
         let mut inner = self.inner.lock();
-        inner.snapshot.copy_mode = enabled;
+        inner.snapshot.overlay_mode = mode;
         inner.snapshot.clone()
     }
 
     pub fn set_panel_pinned(&self, enabled: bool) -> RuntimeSnapshot {
         let mut inner = self.inner.lock();
         inner.snapshot.panel_pinned = enabled;
+        inner.snapshot.clone()
+    }
+
+    pub fn set_ai_translation_enabled(&self, enabled: bool) -> RuntimeSnapshot {
+        let mut inner = self.inner.lock();
+        inner.snapshot.ai_translation_enabled = enabled;
         inner.snapshot.clone()
     }
 
@@ -217,12 +263,13 @@ impl SharedState {
         inner.snapshot.visible_layer = payload.visible_layer;
         match payload.visible_layer {
             VisibleLayer::Translation => {
-                inner.snapshot.status = RuntimeStatus::Ready;
-                inner.snapshot.status_detail = if inner.snapshot.running {
-                    "Translation visible".to_string()
+                if inner.snapshot.running {
+                    inner.snapshot.status = RuntimeStatus::Capturing;
+                    inner.snapshot.status_detail = "Live".to_string();
                 } else {
-                    "Translation ready".to_string()
-                };
+                    inner.snapshot.status = RuntimeStatus::Ready;
+                    inner.snapshot.status_detail = "Translation ready".to_string();
+                }
             }
             VisibleLayer::Ocr => {
                 inner.snapshot.status = RuntimeStatus::Recognizing;

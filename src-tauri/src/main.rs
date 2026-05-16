@@ -27,6 +27,8 @@ fn main() {
                 window.set_content_protected(true)?;
                 window.set_always_on_top(true)?;
             }
+            let state = app.state::<SharedState>();
+            commands::spawn_runtime_prewarm(app.handle(), state.inner_clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -102,12 +104,13 @@ fn main() {
             commands::panel_close,
             commands::panel_minimize,
             commands::run_prompt_benchmark,
+            commands::set_overlay_interaction_mode,
+            commands::toggle_ai_translation,
             commands::toggle_panel_pin,
             commands::start_pipeline,
             commands::stop_pipeline,
             commands::submit_selection,
             commands::toggle_debug_screenshot_mode,
-            commands::toggle_copy_mode,
             commands::update_overlay_selection,
         ])
         .run(tauri::generate_context!())

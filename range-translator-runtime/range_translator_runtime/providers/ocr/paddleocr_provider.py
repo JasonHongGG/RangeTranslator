@@ -94,6 +94,23 @@ class PaddleOcrProvider:
             "lines": best_lines,
         }
 
+    def prewarm(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self._support.available:
+            raise RuntimeError(self._support.detail or "PaddleOCR is unavailable")
+
+        requested_source = str(payload.get("sourceLanguage") or "auto")
+        hint_language = payload.get("hintLanguage")
+        hint_language = str(hint_language) if hint_language else None
+
+        candidate_groups = self._candidate_groups(requested_source, hint_language)
+        group = candidate_groups[0]
+        self._get_engine(group)
+        return {
+            "providerId": self.id,
+            "language": group.resolved_tag,
+            "detail": self._runtime_detail or "PaddleOCR warmed",
+        }
+
     def _should_accept_candidate(
         self,
         lines: list[dict[str, Any]],

@@ -28,11 +28,18 @@ use crate::{
 
 static TRANSLATION_CACHE: OnceLock<Mutex<HashMap<String, AiTranslationResponse>>> = OnceLock::new();
 const AI_RETRY_COOLDOWN: Duration = Duration::from_secs(15);
+const FRAME_IDLE_POLL_DELAY: Duration = Duration::from_millis(180);
+const FRAME_CHANGE_CONFIRM_DELAY: Duration = Duration::from_millis(90);
 
 pub fn begin_pipeline(app: &AppHandle, state: SharedState, settings: PipelineSettings) {
     let (token, snapshot) = state.start_pipeline(settings);
     emit_snapshot(app, &snapshot);
+    emit_translation(app, &state.translation());
 
+    spawn_pipeline(app, state, token);
+}
+
+pub fn spawn_pipeline(app: &AppHandle, state: SharedState, token: u64) {
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         if let Err(error) = pipeline_loop(app_handle.clone(), state.clone(), token).await {
@@ -44,6 +51,7 @@ pub fn begin_pipeline(app: &AppHandle, state: SharedState, settings: PipelineSet
 
 pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Result<()> {
     let mut last_signature: Option<FrameSignature> = None;
+    let mut pending_signature: Option<FrameSignature> = None;
     let mut detected_source_hint: Option<String> = None;
     let mut ai_retry_after: Option<Instant> = None;
     let mut ai_error_summary: Option<String> = None;
@@ -62,7 +70,6 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             break;
         };
 
-        emit_snapshot(&app, &state.set_status(RuntimeStatus::Capturing, "Sampling"));
         let frame = capture_region(&selection)?;
         if !state.is_token_active(token) {
             break;
@@ -71,10 +78,25 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         let signature = FrameSignature::from_image(&frame.image);
         if let Some(previous) = last_signature.as_ref() {
             if !signature.is_meaningfully_different(previous) {
-                tokio::time::sleep(Duration::from_millis(180)).await;
+                pending_signature = None;
+                tokio::time::sleep(FRAME_IDLE_POLL_DELAY).await;
+                continue;
+            }
+
+            if let Some(pending) = pending_signature.as_ref() {
+                if signature.is_meaningfully_different(pending) {
+                    pending_signature = Some(signature);
+                    tokio::time::sleep(FRAME_CHANGE_CONFIRM_DELAY).await;
+                    continue;
+                }
+            } else {
+                pending_signature = Some(signature);
+                tokio::time::sleep(FRAME_CHANGE_CONFIRM_DELAY).await;
                 continue;
             }
         }
+
+        pending_signature = None;
         last_signature = Some(signature);
 
         emit_snapshot(&app, &state.set_status(RuntimeStatus::Recognizing, "OCR"));
@@ -111,6 +133,10 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         );
         emit_snapshot(&app, &provider_snapshot);
 
+        if !state.is_token_active(token) {
+            break;
+        }
+
         if base_blocks.is_empty() {
             emit_ocr_payload(
                 &app,
@@ -125,7 +151,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                 snapshot.prompt_profile.clone(),
                 base_blocks.clone(),
             );
-            tokio::time::sleep(Duration::from_millis(180)).await;
+            tokio::time::sleep(FRAME_IDLE_POLL_DELAY).await;
             continue;
         }
 
@@ -157,7 +183,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                         .unwrap_or_else(|| "Ollama unavailable; keeping OCR visible.".to_string()),
                 );
                 emit_snapshot(&app, &warning_snapshot);
-                tokio::time::sleep(Duration::from_millis(180)).await;
+                tokio::time::sleep(FRAME_IDLE_POLL_DELAY).await;
                 continue;
             }
 
@@ -178,6 +204,17 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             snapshot.prompt_profile.clone(),
             base_blocks.clone(),
         );
+
+        if !state.is_token_active(token) {
+            break;
+        }
+
+        if !snapshot.ai_translation_enabled {
+            ai_retry_after = None;
+            ai_error_summary = None;
+            tokio::time::sleep(FRAME_IDLE_POLL_DELAY).await;
+            continue;
+        }
 
         emit_snapshot(&app, &state.set_status(RuntimeStatus::Translating, "AI"));
         let texts = recognized
@@ -294,7 +331,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                         error_summary,
                     );
                     emit_snapshot(&app, &fallback_snapshot);
-                    tokio::time::sleep(Duration::from_millis(180)).await;
+                    tokio::time::sleep(FRAME_IDLE_POLL_DELAY).await;
                     continue;
                 }
             }
@@ -371,7 +408,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         emit_snapshot(&app, &snapshot);
         emit_translation(&app, &payload);
 
-        tokio::time::sleep(Duration::from_millis(180)).await;
+        tokio::time::sleep(FRAME_IDLE_POLL_DELAY).await;
     }
 
     Ok(())
@@ -415,6 +452,10 @@ fn emit_ocr_payload(
     prompt_profile: String,
     blocks: Vec<OverlayBlock>,
 ) {
+    if !state.is_token_active(generation) {
+        return;
+    }
+
     let visible_layer = if blocks.is_empty() {
         VisibleLayer::None
     } else {

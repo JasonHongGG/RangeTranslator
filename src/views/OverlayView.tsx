@@ -23,6 +23,7 @@ import {
   toLogicalPixels,
 } from '../app/overlay'
 import type {
+  OverlayInteractionMode,
   RuntimeSnapshot,
   SelectionRect,
   TranslationPartialPayload,
@@ -37,6 +38,8 @@ export function OverlayView() {
   const overlayWindow = useMemo(() => currentTauriWindow(), [])
   const boundsRef = useRef<SelectionRect | null>(PREVIEW_SNAPSHOT.selection)
   const overlayBoundsSyncArmedRef = useRef(false)
+  const isInteractive = snapshot.overlayMode !== 'passThrough'
+  const allowsTextSelection = snapshot.overlayMode === 'selectText'
 
   const syncSnapshot = useEffectEvent((next: RuntimeSnapshot) => {
     startTransition(() => {
@@ -63,7 +66,7 @@ export function OverlayView() {
   }, [snapshot.selection])
 
   const syncOverlayBounds = useEffectEvent(async () => {
-    if (!overlayWindow || !isTauri() || !snapshot.copyMode) {
+    if (!overlayWindow || !isTauri() || !isInteractive) {
       return
     }
 
@@ -154,10 +157,10 @@ export function OverlayView() {
       detachTranslation()
       detachPartial()
     }
-  }, [])
+  }, [overlayWindow])
 
   useEffect(() => {
-    if (!overlayWindow || !isTauri() || !snapshot.copyMode) {
+    if (!overlayWindow || !isTauri() || !isInteractive) {
       overlayBoundsSyncArmedRef.current = false
       return
     }
@@ -216,15 +219,15 @@ export function OverlayView() {
       detachResized()
       overlayBoundsSyncArmedRef.current = false
     }
-  }, [overlayWindow, snapshot.copyMode, syncOverlayBounds])
+  }, [overlayWindow, isInteractive])
 
   const startOverlayDrag = async (event: React.PointerEvent<HTMLElement>) => {
-    if (!overlayWindow || event.button !== 0 || !snapshot.copyMode) {
+    if (!overlayWindow || event.button !== 0 || !isInteractive) {
       return
     }
 
     const target = event.target as HTMLElement
-    if (shouldIgnoreWindowDrag(target)) {
+    if (allowsTextSelection && shouldIgnoreWindowDrag(target)) {
       return
     }
 
@@ -239,7 +242,7 @@ export function OverlayView() {
   const startOverlayResize = (direction: ResizeDirection) => async (
     event: React.PointerEvent<HTMLButtonElement>,
   ) => {
-    if (!overlayWindow || event.button !== 0 || !snapshot.copyMode) {
+    if (!overlayWindow || event.button !== 0 || !isInteractive) {
       return
     }
 
@@ -256,7 +259,7 @@ export function OverlayView() {
 
   return (
     <div
-      className={`overlay-page ${snapshot.copyMode ? 'overlay-interactive overlay-copy-mode' : 'overlay-passive'}`}
+      className={`overlay-page ${isInteractive ? 'overlay-interactive' : 'overlay-passive'} ${overlayModeClass(snapshot.overlayMode)}`}
       onPointerDown={startOverlayDrag}
     >
       {PANEL_RESIZE_HANDLES.map((handle) => (
@@ -281,7 +284,7 @@ export function OverlayView() {
         <article
           key={block.id}
           className={`overlay-block overlay-block-${block.align} ${block.streaming ? 'overlay-block-streaming' : ''}`}
-          data-no-drag="true"
+          data-no-drag={allowsTextSelection ? 'true' : undefined}
           style={{
             left: toLogicalPixels(block.x, overlayScale),
             top: toLogicalPixels(block.y, overlayScale),
@@ -297,4 +300,15 @@ export function OverlayView() {
       ))}
     </div>
   )
+}
+
+function overlayModeClass(mode: OverlayInteractionMode) {
+  switch (mode) {
+    case 'selectText':
+      return 'overlay-mode-select-text'
+    case 'dragWindow':
+      return 'overlay-mode-drag-window'
+    default:
+      return 'overlay-mode-pass-through'
+  }
 }

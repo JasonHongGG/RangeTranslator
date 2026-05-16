@@ -30,6 +30,8 @@ class RuntimeApplication:
     ) -> dict[str, Any]:
         if subcommand == "status":
             return self.status()
+        if subcommand == "prewarm":
+            return self.prewarm(payload)
         if subcommand == "recognize":
             return self.recognize(payload)
         if subcommand == "translate":
@@ -73,6 +75,15 @@ class RuntimeApplication:
         if provider is None:
             raise RuntimeError(f"OCR provider not found: {provider_id}")
         return provider.recognize(payload)
+
+    def prewarm(self, payload: dict[str, Any]) -> dict[str, Any]:
+        provider_id = str(
+            payload.get("providerId") or self._default_provider_id_from_map(self.ocr_providers)
+        )
+        provider = self.ocr_providers.get(provider_id)
+        if provider is None:
+            raise RuntimeError(f"OCR provider not found: {provider_id}")
+        return provider.prewarm(payload)
 
     def _default_provider_id(self, providers: list[dict[str, Any]]) -> str | None:
         for provider in providers:

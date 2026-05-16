@@ -1,13 +1,17 @@
+use std::time::Duration;
+
 use serde_json::json;
 use tauri::{AppHandle, Manager, State};
 
 use crate::{
     app::{events::{emit_debug, emit_snapshot, emit_translation}, pipeline, windows},
     benchmark::run_default_prompt_benchmark,
-    models::{BenchmarkReport, PipelineSettings, RuntimeCapabilities, RuntimeSnapshot, SelectionRect, TranslationPayload},
+    models::{BenchmarkReport, OcrWarmupRequest, OverlayInteractionMode, PipelineSettings, RuntimeCapabilities, RuntimeSnapshot, SelectionRect, TranslationPayload},
     sidecar::runtime_gateway,
     state::SharedState,
 };
+
+const BACKGROUND_OCR_PREWARM_DELAY: Duration = Duration::from_secs(2);
 
 #[tauri::command]
 pub fn get_runtime_snapshot(state: State<'_, SharedState>) -> crate::models::RuntimeSnapshot {
@@ -81,6 +85,28 @@ pub fn toggle_panel_pin(
 }
 
 #[tauri::command]
+pub fn toggle_ai_translation(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let snapshot_before = state.snapshot();
+    let snapshot = state.set_ai_translation_enabled(enabled);
+    emit_debug(
+        &app,
+        "panel-backend",
+        "AI translation toggled",
+        json!({
+            "enabled": enabled,
+            "running": snapshot_before.running,
+        }),
+    );
+    emit_snapshot(&app, &snapshot);
+
+    Ok(())
+}
+
+#[tauri::command]
 pub fn panel_close(app: AppHandle, state: State<'_, SharedState>) -> Result<(), String> {
     emit_debug(
         &app,
@@ -136,7 +162,7 @@ pub async fn submit_selection(
         windows::ensure_overlay_window(
             &app,
             &selection,
-            snapshot_before.copy_mode,
+            snapshot_before.overlay_mode.is_interactive(),
             true,
         )
         .await?;
@@ -233,10 +259,25 @@ pub async fn start_pipeline(
     }
 
     let selection = windows::selection_or_error(&state.inner_clone())?;
-    let capabilities = runtime_gateway().query_capabilities().await?;
-    let synced_snapshot = sync_runtime_defaults(&app, state.inner_clone(), &capabilities);
-    ensure_ocr_runtime_ready(&synced_snapshot, &capabilities)?;
-    windows::ensure_overlay_window(&app, &selection, state.snapshot().copy_mode, true).await?;
+    let snapshot_before = state.snapshot();
+    let needs_runtime_query = snapshot_before.ocr_provider.is_empty()
+        || (snapshot_before.ai_translation_enabled
+            && (snapshot_before.ai_provider.is_empty()
+                || snapshot_before.prompt_profile.is_empty()));
+
+    if needs_runtime_query {
+        let capabilities = runtime_gateway().query_capabilities().await?;
+        let synced_snapshot = sync_runtime_defaults(&app, state.inner_clone(), &capabilities);
+        ensure_ocr_runtime_ready(&synced_snapshot, &capabilities)?;
+    }
+
+    windows::ensure_overlay_window(
+        &app,
+        &selection,
+        state.snapshot().overlay_mode.is_interactive(),
+        true,
+    )
+    .await?;
     pipeline::begin_pipeline(&app, state.inner_clone(), settings);
     Ok(())
 }
@@ -247,7 +288,9 @@ pub fn update_overlay_selection(
     state: State<'_, SharedState>,
     selection: SelectionRect,
 ) -> Result<(), String> {
-    if !state.snapshot().copy_mode {
+    let snapshot_before = state.snapshot();
+
+    if !snapshot_before.overlay_mode.is_interactive() {
         emit_debug(
             &app,
             "overlay-backend",
@@ -268,6 +311,23 @@ pub fn update_overlay_selection(
         }),
     );
 
+    if snapshot_before.running {
+        let (token, snapshot, translation) = state.restart_pipeline_with_selection(selection);
+        emit_debug(
+            &app,
+            "overlay-backend",
+            "overlay selection update restarted live pipeline",
+            json!({
+                "generation": snapshot.generation,
+                "selection": snapshot.selection,
+            }),
+        );
+        emit_snapshot(&app, &snapshot);
+        emit_translation(&app, &translation);
+        pipeline::spawn_pipeline(&app, state.inner_clone(), token);
+        return Ok(());
+    }
+
     let snapshot = state.set_selection(selection);
     emit_snapshot(&app, &snapshot);
     emit_translation(&app, &state.translation());
@@ -279,9 +339,9 @@ pub fn stop_pipeline(app: AppHandle, state: State<'_, SharedState>) -> Result<()
     let snapshot = state.stop_pipeline();
     if let Some(window) = app.get_webview_window("overlay") {
         window
-            .set_ignore_cursor_events(!snapshot.copy_mode)
+            .set_ignore_cursor_events(!snapshot.overlay_mode.is_interactive())
             .map_err(|error| error.to_string())?;
-        if snapshot.copy_mode {
+        if snapshot.overlay_mode.is_interactive() {
             window.set_focus().map_err(|error| error.to_string())?;
         }
     }
@@ -290,21 +350,22 @@ pub fn stop_pipeline(app: AppHandle, state: State<'_, SharedState>) -> Result<()
 }
 
 #[tauri::command]
-pub fn toggle_copy_mode(
+pub fn set_overlay_interaction_mode(
     app: AppHandle,
     state: State<'_, SharedState>,
-    enabled: bool,
+    mode: OverlayInteractionMode,
 ) -> Result<(), String> {
-    let snapshot = state.set_copy_mode(enabled);
+    let snapshot = state.set_overlay_mode(mode);
     if let Some(window) = app.get_webview_window("overlay") {
         window
-            .set_ignore_cursor_events(!enabled)
+            .set_ignore_cursor_events(!mode.is_interactive())
             .map_err(|error| error.to_string())?;
-        if enabled {
+        if mode.is_interactive() {
             window.set_focus().map_err(|error| error.to_string())?;
         }
     }
     emit_snapshot(&app, &snapshot);
+
     Ok(())
 }
 
@@ -314,9 +375,10 @@ pub fn toggle_debug_screenshot_mode(
     state: State<'_, SharedState>,
     enabled: bool,
 ) -> Result<(), String> {
-    let running_before = state.snapshot().running;
+    let snapshot_before = state.snapshot();
+    let running_before = snapshot_before.running;
     if enabled && running_before {
-        let _ = state.stop_pipeline();
+        let _ = state.suspend_pipeline_for_debug();
     }
 
     windows::set_capture_protection(&app, !enabled)?;
@@ -328,11 +390,103 @@ pub fn toggle_debug_screenshot_mode(
         "debug screenshot mode toggled",
         json!({
             "enabled": enabled,
-            "stoppedRunningPipeline": enabled && running_before,
+            "suspendedLivePipeline": enabled && running_before,
+            "preservedStatus": snapshot_before.status,
         }),
     );
     emit_snapshot(&app, &snapshot);
     Ok(())
+}
+
+pub fn spawn_runtime_prewarm(app: &AppHandle, state: SharedState) {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(BACKGROUND_OCR_PREWARM_DELAY).await;
+
+        let snapshot_before = state.snapshot();
+        if snapshot_before.running || snapshot_before.selection.is_some() {
+            emit_debug(
+                &app_handle,
+                "runtime-backend",
+                "skipped OCR prewarm because the user already started interacting",
+                json!({
+                    "running": snapshot_before.running,
+                    "hasSelection": snapshot_before.selection.is_some(),
+                }),
+            );
+            return;
+        }
+
+        let capabilities = match runtime_gateway().query_capabilities().await {
+            Ok(capabilities) => capabilities,
+            Err(error) => {
+                emit_debug(
+                    &app_handle,
+                    "runtime-backend",
+                    "background capability query failed",
+                    json!({
+                        "error": error,
+                    }),
+                );
+                return;
+            }
+        };
+
+        let snapshot = sync_runtime_defaults(&app_handle, state.clone(), &capabilities);
+        let latest_snapshot = state.snapshot();
+        if latest_snapshot.running || latest_snapshot.selection.is_some() {
+            emit_debug(
+                &app_handle,
+                "runtime-backend",
+                "aborted OCR prewarm because the user became active",
+                json!({
+                    "running": latest_snapshot.running,
+                    "hasSelection": latest_snapshot.selection.is_some(),
+                }),
+            );
+            return;
+        }
+
+        if snapshot.ocr_provider.is_empty() {
+            emit_debug(
+                &app_handle,
+                "runtime-backend",
+                "skipped OCR prewarm because no default provider is available",
+                json!({
+                    "ocrProviders": capabilities.ocr_providers,
+                }),
+            );
+            return;
+        }
+
+        match runtime_gateway()
+            .prewarm_ocr(OcrWarmupRequest {
+                provider_id: snapshot.ocr_provider.clone(),
+                source_language: snapshot.source_language.clone(),
+                hint_language: snapshot.last_detected_source.clone(),
+            })
+            .await
+        {
+            Ok(response) => emit_debug(
+                &app_handle,
+                "runtime-backend",
+                "background OCR prewarm complete",
+                json!({
+                    "provider": response.provider_id,
+                    "language": response.language,
+                    "detail": response.detail,
+                }),
+            ),
+            Err(error) => emit_debug(
+                &app_handle,
+                "runtime-backend",
+                "background OCR prewarm failed",
+                json!({
+                    "error": error,
+                }),
+            ),
+        }
+    });
 }
 
 fn sync_runtime_defaults(

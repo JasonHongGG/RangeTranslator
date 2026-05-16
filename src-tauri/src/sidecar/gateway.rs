@@ -4,7 +4,7 @@ use serde_json::json;
 
 use crate::models::{
     AiTranslationDelta, AiTranslationRequest, AiTranslationResponse, OcrRecognitionRequest,
-    OcrRecognitionResponse, RuntimeCapabilities,
+    OcrRecognitionResponse, OcrWarmupRequest, OcrWarmupResponse, RuntimeCapabilities,
 };
 
 use super::transport::{invoke, invoke_streaming};
@@ -18,6 +18,11 @@ pub trait RuntimeGateway: Send + Sync {
         &'a self,
         request: OcrRecognitionRequest,
     ) -> Pin<Box<dyn Future<Output = Result<OcrRecognitionResponse, String>> + Send + 'a>>;
+
+    fn prewarm_ocr<'a>(
+        &'a self,
+        request: OcrWarmupRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<OcrWarmupResponse, String>> + Send + 'a>>;
 
     fn translate<'a>(
         &'a self,
@@ -46,6 +51,17 @@ impl RuntimeGateway for SidecarRuntimeGateway {
     ) -> Pin<Box<dyn Future<Output = Result<OcrRecognitionResponse, String>> + Send + 'a>> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || invoke("recognize", &request))
+                .await
+                .map_err(|error| error.to_string())?
+        })
+    }
+
+    fn prewarm_ocr<'a>(
+        &'a self,
+        request: OcrWarmupRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<OcrWarmupResponse, String>> + Send + 'a>> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || invoke("prewarm", &request))
                 .await
                 .map_err(|error| error.to_string())?
         })

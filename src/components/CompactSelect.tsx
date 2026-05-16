@@ -30,6 +30,37 @@ export function CompactSelect({
   onChange: (value: string) => void
   menuSide?: 'top' | 'bottom'
 }) {
+  return (
+    <CompactSelectInner
+      key={disabled ? 'disabled' : 'enabled'}
+      label={label}
+      icon={icon}
+      value={value}
+      options={options}
+      disabled={disabled}
+      onChange={onChange}
+      menuSide={menuSide}
+    />
+  )
+}
+
+function CompactSelectInner({
+  label,
+  icon,
+  value,
+  options,
+  disabled,
+  onChange,
+  menuSide = 'bottom',
+}: {
+  label: string
+  icon: ReactNode
+  value: string
+  options: ReadonlyArray<SelectOption>
+  disabled?: boolean
+  onChange: (value: string) => void
+  menuSide?: 'top' | 'bottom'
+}) {
   const buttonId = useId()
   const menuId = useId()
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -60,12 +91,6 @@ export function CompactSelect({
       window.removeEventListener('keydown', handleKeyDown)
     }
   }, [open])
-
-  useEffect(() => {
-    if (disabled && open) {
-      setOpen(false)
-    }
-  }, [disabled, open])
 
   return (
     <div

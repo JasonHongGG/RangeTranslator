@@ -15,7 +15,25 @@ import { labelForStatus, shouldIgnoreWindowDrag, toneForStatus } from '../app/ov
 import { FiX, FiMinus, FiPlay, FiPause, FiCrop, FiMousePointer, FiCamera, FiGlobe, FiType, FiArrowRight } from "react-icons/fi";
 import { RiPushpinLine } from "react-icons/ri";
 
-import type { RuntimeSnapshot } from '../types'
+import type { OverlayInteractionMode, RuntimeSnapshot } from '../types'
+
+const OVERLAY_MODE_ORDER: OverlayInteractionMode[] = ['passThrough', 'selectText', 'dragWindow']
+
+function nextOverlayMode(mode: OverlayInteractionMode): OverlayInteractionMode {
+  const currentIndex = OVERLAY_MODE_ORDER.indexOf(mode)
+  return OVERLAY_MODE_ORDER[(currentIndex + 1 + OVERLAY_MODE_ORDER.length) % OVERLAY_MODE_ORDER.length]
+}
+
+function overlayModeTitle(mode: OverlayInteractionMode) {
+  switch (mode) {
+    case 'passThrough':
+      return 'Overlay mode: pass-through'
+    case 'selectText':
+      return 'Overlay mode: text selection'
+    case 'dragWindow':
+      return 'Overlay mode: drag window'
+  }
+}
 
 export function PanelView() {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
@@ -150,7 +168,9 @@ export function PanelView() {
       }
       event.preventDefault()
       void runCommand(() =>
-        call('toggle_copy_mode', { enabled: !snapshot.copyMode }),
+        call('set_overlay_interaction_mode', {
+          mode: nextOverlayMode(snapshot.overlayMode),
+        }),
       )
       return
     }
@@ -325,12 +345,28 @@ export function PanelView() {
         <div data-no-drag="true" style={{ display: 'flex', gap: '8px' }}>
           <button
             type="button"
-            className={`ghost-icon-btn ${snapshot.copyMode ? 'active' : ''}`}
+            className={`ghost-icon-btn ${snapshot.aiTranslationEnabled ? 'active' : ''}`}
             disabled={busy || !snapshot.selection}
-            title={snapshot.copyMode ? 'Enable mouse passthrough' : 'Disable mouse passthrough'}
+            title={snapshot.aiTranslationEnabled ? 'Disable AI translation' : 'Enable AI translation'}
             onClick={() =>
               runCommand(() =>
-                call('toggle_copy_mode', { enabled: !snapshot.copyMode }),
+                call('toggle_ai_translation', { enabled: !snapshot.aiTranslationEnabled }),
+              )
+            }
+          >
+            <FiGlobe size={18} />
+          </button>
+          <button
+            type="button"
+            className={`ghost-icon-btn ${snapshot.overlayMode !== 'passThrough' ? 'active' : ''}`}
+            disabled={busy || !snapshot.selection}
+            title={overlayModeTitle(snapshot.overlayMode)}
+            aria-label={overlayModeTitle(snapshot.overlayMode)}
+            onClick={() =>
+              runCommand(() =>
+                call('set_overlay_interaction_mode', {
+                  mode: nextOverlayMode(snapshot.overlayMode),
+                }),
               )
             }
           >
@@ -341,7 +377,7 @@ export function PanelView() {
             className={`ghost-icon-btn ${snapshot.debugScreenshotMode ? 'active' : ''}`}
             disabled={busy}
             title={snapshot.debugScreenshotMode
-              ? 'Disable debug screenshot mode (Translation Pipeline Paused)'
+              ? 'Disable debug camera mode'
               : 'Enable debug screenshot mode'}
             onClick={() =>
               runCommand(() =>

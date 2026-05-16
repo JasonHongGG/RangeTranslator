@@ -205,7 +205,7 @@ export function SelectorView() {
       window.removeEventListener('keydown', onKeyDown, true)
       document.removeEventListener('keydown', onKeyDown, true)
     }
-  }, [requestSelectorCancel, selectorBounds, selectorWindow])
+  }, [selectorBounds, selectorWindow])
 
   const submitSelection = async (nextSelection: SelectionRect | null) => {
     if (!nextSelection || nextSelection.width < 24 || nextSelection.height < 24) {

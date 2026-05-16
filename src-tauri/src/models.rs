@@ -24,6 +24,21 @@ pub enum TextAlign {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub enum OverlayInteractionMode {
+    PassThrough,
+    #[default]
+    SelectText,
+    DragWindow,
+}
+
+impl OverlayInteractionMode {
+    pub fn is_interactive(self) -> bool {
+        !matches!(self, Self::PassThrough)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub enum PartialUpdateStage {
     #[default]
     Ocr,
@@ -181,6 +196,22 @@ pub struct OcrRecognitionRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct OcrWarmupRequest {
+    pub provider_id: String,
+    pub source_language: String,
+    pub hint_language: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrWarmupResponse {
+    pub provider_id: String,
+    pub language: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct OcrRecognitionLine {
     pub text: String,
     pub rect: PixelRect,
@@ -275,11 +306,12 @@ pub struct RuntimeSnapshot {
     pub ocr_provider: String,
     pub ai_provider: String,
     pub prompt_profile: String,
+    pub ai_translation_enabled: bool,
     pub panel_pinned: bool,
     pub debug_screenshot_mode: bool,
     pub selection: Option<SelectionRect>,
     pub selector_bounds: Option<SelectionRect>,
-    pub copy_mode: bool,
+    pub overlay_mode: OverlayInteractionMode,
     pub endpoint: String,
     pub model: String,
     pub generation: u64,
@@ -308,11 +340,12 @@ impl Default for RuntimeSnapshot {
             ocr_provider: String::new(),
             ai_provider: String::new(),
             prompt_profile: String::new(),
+            ai_translation_enabled: true,
             panel_pinned: true,
             debug_screenshot_mode: false,
             selection: None,
             selector_bounds: None,
-            copy_mode: true,
+            overlay_mode: OverlayInteractionMode::SelectText,
             endpoint: String::new(),
             model: "discovering".to_string(),
             generation: 0,

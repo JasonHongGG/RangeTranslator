@@ -769,12 +769,26 @@ svg {
   pointer-events: auto;
 }
 
-.overlay-copy-mode {
+.overlay-mode-pass-through {
+  user-select: none;
+}
+
+.overlay-mode-select-text {
   user-select: text;
 }
 
-.overlay-copy-mode .overlay-block {
+.overlay-mode-select-text .overlay-block {
   pointer-events: auto;
+  cursor: text;
+}
+
+.overlay-mode-drag-window {
+  user-select: none;
+  cursor: move;
+}
+
+.overlay-mode-drag-window .overlay-block {
+  cursor: move;
 }
 
 .overlay-page .resize-handle {
