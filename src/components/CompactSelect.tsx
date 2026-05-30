@@ -1,5 +1,4 @@
 import {
-  type ReactNode,
   useEffect,
   useId,
   useRef,
@@ -14,16 +13,12 @@ type SelectOption = {
 }
 
 export function CompactSelect({
-  label,
-  icon,
   value,
   options,
   disabled,
   onChange,
   menuSide = 'bottom',
 }: {
-  label: string
-  icon: ReactNode
   value: string
   options: ReadonlyArray<SelectOption>
   disabled?: boolean
@@ -33,8 +28,6 @@ export function CompactSelect({
   return (
     <CompactSelectInner
       key={disabled ? 'disabled' : 'enabled'}
-      label={label}
-      icon={icon}
       value={value}
       options={options}
       disabled={disabled}
@@ -45,16 +38,12 @@ export function CompactSelect({
 }
 
 function CompactSelectInner({
-  label,
-  icon,
   value,
   options,
   disabled,
   onChange,
   menuSide = 'bottom',
 }: {
-  label: string
-  icon: ReactNode
   value: string
   options: ReadonlyArray<SelectOption>
   disabled?: boolean
@@ -68,20 +57,15 @@ function CompactSelectInner({
   const activeOption = options.find((option) => option.code === value) ?? options[0]
 
   useEffect(() => {
-    if (!open) {
-      return
-    }
+    if (!open) return
 
     const handlePointerDown = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) {
         setOpen(false)
       }
     }
-
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setOpen(false)
-      }
+      if (event.key === 'Escape') setOpen(false)
     }
 
     window.addEventListener('pointerdown', handlePointerDown)
@@ -95,33 +79,27 @@ function CompactSelectInner({
   return (
     <div
       ref={rootRef}
-      className={`compact-select compact-select-${menuSide} ${
-        open ? 'compact-select-open' : ''
-      }`}
+      className={`custom-select ${open ? 'open' : ''}`}
       data-no-drag="true"
     >
       <button
         id={buttonId}
         type="button"
-        className="compact-select-trigger"
+        className="select-trigger"
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={menuId}
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="compact-select-icon">{icon}</span>
-        <span className="compact-select-label">{label}</span>
-        <span className="compact-select-current">{activeOption?.nativeLabel ?? value}</span>
-        <span className="compact-select-caret">
-          <FiChevronDown />
-        </span>
+        <span style={{flex: 1, textAlign: 'center'}}>{activeOption?.nativeLabel ?? value}</span>
+        <FiChevronDown className="select-caret" />
       </button>
 
       {open ? (
         <div
           id={menuId}
-          className={`compact-select-menu compact-select-menu-${menuSide}`}
+          className={`select-menu select-menu-${menuSide}`}
           role="listbox"
           aria-labelledby={buttonId}
         >
@@ -131,9 +109,7 @@ function CompactSelectInner({
               <button
                 key={option.code}
                 type="button"
-                className={`compact-select-option ${
-                  active ? 'compact-select-option-active' : ''
-                }`}
+                className={`select-option ${active ? 'active' : ''}`}
                 role="option"
                 aria-selected={active}
                 onClick={() => {
@@ -141,18 +117,8 @@ function CompactSelectInner({
                   setOpen(false)
                 }}
               >
-                <span className="compact-select-option-copy">
-                  <span className="compact-select-option-primary">
-                    {option.nativeLabel}
-                  </span>
-                  <span className="compact-select-option-secondary">{option.label}</span>
-                </span>
-
-                {active ? (
-                  <span className="compact-select-option-check">
-                    <FiCheck />
-                  </span>
-                ) : null}
+                <span>{option.nativeLabel}</span>
+                {active && <FiCheck className="select-option-check" />}
               </button>
             )
           })}
