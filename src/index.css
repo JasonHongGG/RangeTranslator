@@ -5,8 +5,8 @@
   --ink-soft: #64748b;
   --ink-faint: #94a3b8;
   
-  --accent-blue: #3b82f6;
-  --accent-blue-hover: #2563eb;
+  --accent-blue: #60a5fa;
+  --accent-blue-hover: #3b82f6;
   --accent-yellow: #f59e0b;
   --danger: #ef4444;
   
@@ -123,7 +123,7 @@ svg { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none
   align-items: center;
   justify-content: center;
   gap: 32px;
-  z-index: 2;
+  position: relative;
 }
 
 /* Lang Capsule */
@@ -131,12 +131,13 @@ svg { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none
   display: flex;
   align-items: center;
   background: rgba(255,255,255,0.6);
-  backdrop-filter: blur(16px);
   padding: 4px 8px;
   border-radius: 99px;
   border: 1px solid rgba(255,255,255,0.9);
   box-shadow: var(--shadow-sm);
   gap: 8px;
+  position: relative;
+  z-index: 20;
 }
 .lang-arrow { color: var(--ink-faint); width: 14px; height: 14px; }
 
@@ -153,19 +154,20 @@ svg { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none
   border-radius: 50%;
   background: #ffffff;
   color: var(--accent-blue);
-  box-shadow: 0 12px 32px rgba(59, 130, 246, 0.15);
+  box-shadow: 0 12px 32px rgba(96, 165, 250, 0.2);
   border: 1px solid rgba(255,255,255,0.9);
   display: flex; align-items: center; justify-content: center;
 }
 .play-btn svg { width: 36px; height: 36px; margin-left: 4px; }
 .play-btn:hover:not(:disabled) {
   transform: scale(1.05);
-  box-shadow: 0 16px 40px rgba(59, 130, 246, 0.25);
+  box-shadow: 0 16px 40px rgba(96, 165, 250, 0.3);
 }
 .play-btn.running {
   background: var(--accent-blue);
   color: #fff;
   border: none;
+  box-shadow: 0 12px 32px rgba(96, 165, 250, 0.35);
 }
 .play-btn.running svg { margin-left: 0; }
 .play-btn.running:hover:not(:disabled) { background: var(--accent-blue-hover); }
@@ -197,7 +199,7 @@ svg { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none
   display: flex;
   justify-content: center;
   margin-top: auto;
-  z-index: 3;
+  position: relative;
 }
 .mac-dock {
   display: flex;
@@ -228,7 +230,8 @@ svg { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none
 }
 
 /* Custom Select */
-.custom-select { position: relative; }
+.custom-select { position: relative; z-index: 1; }
+.custom-select.open { z-index: 100; }
 .select-trigger {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 12px;

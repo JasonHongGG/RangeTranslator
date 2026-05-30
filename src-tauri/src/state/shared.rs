@@ -178,17 +178,13 @@ impl SharedState {
         inner.snapshot.clone()
     }
 
-    pub fn suspend_pipeline_for_debug(&self) -> RuntimeSnapshot {
-        let mut inner = self.inner.lock();
-        inner.pipeline_token = inner.pipeline_token.saturating_add(1);
-        inner.snapshot.running = false;
-        inner.snapshot.last_error = None;
-        inner.snapshot.clone()
-    }
+
 
     pub fn is_token_active(&self, token: u64) -> bool {
         let inner = self.inner.lock();
-        inner.snapshot.running && inner.pipeline_token == token
+        inner.snapshot.running
+            && inner.pipeline_token == token
+            && !inner.snapshot.debug_screenshot_mode
     }
 
     pub fn set_status(&self, status: RuntimeStatus, detail: impl Into<String>) -> RuntimeSnapshot {

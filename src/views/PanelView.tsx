@@ -175,9 +175,6 @@ export function PanelView() {
     }
 
     if ((event.ctrlKey || event.metaKey) && key === 'enter') {
-      if (snapshot.debugScreenshotMode) {
-        return
-      }
       event.preventDefault()
       void runCommand(() =>
         call(snapshot.running ? 'stop_pipeline' : 'start_pipeline', {
@@ -275,7 +272,7 @@ export function PanelView() {
             type="button"
             className={`play-btn ${snapshot.running ? 'running' : ''}`}
             data-no-drag="true"
-            disabled={busy || snapshot.debugScreenshotMode || (!snapshot.running && !snapshot.selection)}
+            disabled={busy || (!snapshot.running && !snapshot.selection)}
             onClick={() =>
               runCommand(() =>
                 call(snapshot.running ? 'stop_pipeline' : 'start_pipeline', {

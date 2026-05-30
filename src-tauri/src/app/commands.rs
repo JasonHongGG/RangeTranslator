@@ -158,15 +158,14 @@ pub async fn submit_selection(
         target_language: snapshot_before.target_language,
     };
 
-    if !snapshot_before.debug_screenshot_mode {
-        windows::ensure_overlay_window(
-            &app,
-            &selection,
-            snapshot_before.overlay_mode.is_interactive(),
-            true,
-        )
-        .await?;
-    }
+    let content_protected = !snapshot_before.debug_screenshot_mode;
+    windows::ensure_overlay_window(
+        &app,
+        &selection,
+        snapshot_before.overlay_mode.is_interactive(),
+        content_protected,
+    )
+    .await?;
 
     let snapshot = state.set_selection(selection);
     emit_debug(
@@ -184,18 +183,6 @@ pub async fn submit_selection(
     windows::hide_window(&app, "selector");
     windows::schedule_window_close(&app, "selector", 30);
 
-    if snapshot_before.debug_screenshot_mode {
-        emit_debug(
-            &app,
-            "selector-backend",
-            "selection committed while debug screenshot mode is active",
-            json!({
-                "selection": snapshot.selection,
-                "pipelineStarted": false,
-            }),
-        );
-        return Ok(());
-    }
 
     pipeline::begin_pipeline(&app, state.inner_clone(), settings);
 
@@ -251,12 +238,7 @@ pub async fn start_pipeline(
     state: State<'_, SharedState>,
     settings: PipelineSettings,
 ) -> Result<(), String> {
-    if state.snapshot().debug_screenshot_mode {
-        return Err(
-            "Debug screenshot mode is enabled. Disable it before starting live translation."
-                .to_string(),
-        );
-    }
+    let content_protected = !state.snapshot().debug_screenshot_mode;
 
     let selection = windows::selection_or_error(&state.inner_clone())?;
     let snapshot_before = state.snapshot();
@@ -275,7 +257,7 @@ pub async fn start_pipeline(
         &app,
         &selection,
         state.snapshot().overlay_mode.is_interactive(),
-        true,
+        content_protected,
     )
     .await?;
     pipeline::begin_pipeline(&app, state.inner_clone(), settings);
@@ -376,11 +358,9 @@ pub fn toggle_debug_screenshot_mode(
     enabled: bool,
 ) -> Result<(), String> {
     let snapshot_before = state.snapshot();
-    let running_before = snapshot_before.running;
-    if enabled && running_before {
-        let _ = state.suspend_pipeline_for_debug();
-    }
+    let was_running = snapshot_before.running;
 
+    // Toggle capture protection so the user can take screenshots.
     windows::set_capture_protection(&app, !enabled)?;
 
     let snapshot = state.set_debug_screenshot_mode(enabled);
@@ -390,11 +370,22 @@ pub fn toggle_debug_screenshot_mode(
         "debug screenshot mode toggled",
         json!({
             "enabled": enabled,
-            "suspendedLivePipeline": enabled && running_before,
+            "wasRunning": was_running,
             "preservedStatus": snapshot_before.status,
         }),
     );
     emit_snapshot(&app, &snapshot);
+
+    // When debug mode is turned OFF and the pipeline was running,
+    // re-spawn the pipeline loop since it exited when debug was activated.
+    if !enabled && was_running {
+        let settings = PipelineSettings {
+            source_language: snapshot.source_language.clone(),
+            target_language: snapshot.target_language.clone(),
+        };
+        pipeline::begin_pipeline(&app, state.inner_clone(), settings);
+    }
+
     Ok(())
 }
 
