@@ -260,6 +260,7 @@ export function OverlayView() {
   return (
     <div
       className={`overlay-page ${isInteractive ? 'overlay-interactive' : 'overlay-passive'} ${overlayModeClass(snapshot.overlayMode)}`}
+      data-tauri-drag-region={snapshot.overlayMode === 'dragWindow' ? 'true' : undefined}
       onPointerDown={startOverlayDrag}
     >
       {PANEL_RESIZE_HANDLES.map((handle) => (

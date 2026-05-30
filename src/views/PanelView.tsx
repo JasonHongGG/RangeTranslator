@@ -12,7 +12,7 @@ import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, PREVIEW_SNAPSHOT, type DebugPayload,
 import { logDebugPayload } from '../app/debug'
 import { labelForStatus, shouldIgnoreWindowDrag, toneForStatus } from '../app/overlay'
 
-import { FiX, FiMinus, FiPlay, FiPause, FiCrop, FiMousePointer, FiCamera, FiGlobe, FiArrowRight } from "react-icons/fi";
+import { FiX, FiMinus, FiPlay, FiPause, FiCrop, FiMousePointer, FiCamera, FiGlobe, FiArrowRight, FiEye, FiMove } from "react-icons/fi";
 import { RiPushpinLine, RiPushpinFill } from "react-icons/ri";
 
 import type { OverlayInteractionMode, RuntimeSnapshot } from '../types'
@@ -209,13 +209,13 @@ export function PanelView() {
         ></button>
       ))}
 
-      <header className="panel-header" data-no-drag="true">
-        <div className="status-indicator">
+      <header className="panel-header">
+        <div className="status-indicator" data-no-drag="true">
           <div className={`status-dot ${statusTone === 'danger' ? 'danger' : ''}`}></div>
           <span>{labelForStatus(snapshot.status)}</span>
         </div>
 
-        <div className="window-controls">
+        <div className="window-controls" data-no-drag="true">
           <button
             type="button"
             className={`window-btn ${snapshot.panelPinned ? 'active' : ''}`}
@@ -303,8 +303,8 @@ export function PanelView() {
         </div>
       </section>
 
-      <footer className="dock-container" data-no-drag="true">
-        <div className="mac-dock">
+      <footer className="dock-container">
+        <div className="mac-dock" data-no-drag="true">
           <button
             type="button"
             className={`dock-icon ${snapshot.aiTranslationEnabled ? 'active' : ''}`}
@@ -322,7 +322,7 @@ export function PanelView() {
             type="button"
             className={`dock-icon ${snapshot.overlayMode !== 'passThrough' ? 'active' : ''}`}
             disabled={busy || !snapshot.selection}
-            title="Overlay Mode"
+            title={snapshot.overlayMode === 'passThrough' ? 'Overlay Mode: View Only' : snapshot.overlayMode === 'selectText' ? 'Overlay Mode: Select Text' : 'Overlay Mode: Drag Window'}
             onClick={() =>
               runCommand(() =>
                 call('set_overlay_interaction_mode', {
@@ -331,7 +331,9 @@ export function PanelView() {
               )
             }
           >
-            <FiMousePointer />
+            {snapshot.overlayMode === 'passThrough' && <FiEye />}
+            {snapshot.overlayMode === 'selectText' && <FiMousePointer />}
+            {snapshot.overlayMode === 'dragWindow' && <FiMove />}
           </button>
           <button
             type="button"
