@@ -28,7 +28,7 @@ fn set_window_capture_protection(
 }
 
 pub fn set_capture_protection(app: &AppHandle, content_protected: bool) -> Result<(), String> {
-    for label in ["panel", "selector", "overlay"] {
+    for label in ["panel", "selector", "overlay", "settings"] {
         if let Some(window) = app.get_webview_window(label) {
             set_window_capture_protection(&window, content_protected)?;
         }
@@ -428,6 +428,7 @@ pub async fn open_settings_window(app: &AppHandle, state: SharedState) -> Result
         let result: Result<(), String> = (|| {
             if let Some(window) = app_handle.get_webview_window("settings") {
                 let _ = window.set_always_on_top(is_pinned);
+                let _ = set_window_capture_protection(&window, !state.snapshot().debug_screenshot_mode);
                 window.show().map_err(|error| error.to_string())?;
                 window.set_focus().map_err(|error| error.to_string())?;
                 return Ok(());
