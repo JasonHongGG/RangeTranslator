@@ -416,3 +416,51 @@ pub fn selection_or_error(state: &SharedState) -> Result<SelectionRect, String> 
         .context("Select a region before starting")
         .map_err(|error| error.to_string())
 }
+
+pub async fn open_settings_window(app: &AppHandle) -> Result<(), String> {
+    use tokio::sync::oneshot;
+
+    let (tx, rx) = oneshot::channel();
+    let app_handle = app.clone();
+
+    app.run_on_main_thread(move || {
+        let result: Result<(), String> = (|| {
+            if let Some(window) = app_handle.get_webview_window("settings") {
+                window.show().map_err(|error| error.to_string())?;
+                window.set_focus().map_err(|error| error.to_string())?;
+                return Ok(());
+            }
+
+            let window = WebviewWindowBuilder::new(
+                &app_handle,
+                "settings",
+                WebviewUrl::App("index.html".into()),
+            )
+            .title("RangeTranslator Settings")
+            .initialization_script(r#"window.__RANGE_TRANSLATOR_VIEW__ = 'settings';"#)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(false)
+            .skip_taskbar(false)
+            .resizable(true)
+            .shadow(true)
+            .visible(false)
+            .focused(true)
+            .inner_size(450.0, 350.0)
+            .min_inner_size(400.0, 300.0)
+            .center()
+            .build()
+            .map_err(|error| error.to_string())?;
+
+            window.show().map_err(|error| error.to_string())?;
+            window.set_focus().map_err(|error| error.to_string())?;
+            Ok(())
+        })();
+
+        let _ = tx.send(result);
+    })
+    .map_err(|error| error.to_string())?;
+
+    rx.await
+        .map_err(|_| "settings main-thread callback dropped".to_string())?
+}

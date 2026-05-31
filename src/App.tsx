@@ -4,6 +4,7 @@ import { resolveRouteInfo } from './app/routing'
 import { OverlayView } from './views/OverlayView'
 import { PanelView } from './views/PanelView'
 import { SelectorView } from './views/SelectorView'
+import { SettingsView } from './views/SettingsView'
 
 function App() {
   const route = useMemo(() => resolveRouteInfo(), [])
@@ -99,6 +100,10 @@ function App() {
 
   if (route.view === 'overlay') {
     return <OverlayView />
+  }
+
+  if (route.view === 'settings') {
+    return <SettingsView />
   }
 
   return <PanelView />

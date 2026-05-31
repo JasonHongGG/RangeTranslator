@@ -12,17 +12,12 @@ import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, PREVIEW_SNAPSHOT, type DebugPayload,
 import { logDebugPayload } from '../app/debug'
 import { labelForStatus, shouldIgnoreWindowDrag, toneForStatus } from '../app/overlay'
 
-import { FiX, FiMinus, FiPlay, FiPause, FiCrop, FiMousePointer, FiCamera, FiGlobe, FiArrowRight, FiEye, FiMove } from "react-icons/fi";
+import { FiX, FiMinus, FiPlay, FiPause, FiCrop, FiGlobe, FiArrowRight, FiSettings } from "react-icons/fi";
 import { RiPushpinLine, RiPushpinFill } from "react-icons/ri";
 
 import type { OverlayInteractionMode, RuntimeSnapshot } from '../types'
 
-const OVERLAY_MODE_ORDER: OverlayInteractionMode[] = ['passThrough', 'selectText', 'dragWindow']
 
-function nextOverlayMode(mode: OverlayInteractionMode): OverlayInteractionMode {
-  const currentIndex = OVERLAY_MODE_ORDER.indexOf(mode)
-  return OVERLAY_MODE_ORDER[(currentIndex + 1 + OVERLAY_MODE_ORDER.length) % OVERLAY_MODE_ORDER.length]
-}
 
 export function PanelView() {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
@@ -151,18 +146,7 @@ export function PanelView() {
       return
     }
 
-    if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'c') {
-      if (!snapshot.selection) {
-        return
-      }
-      event.preventDefault()
-      void runCommand(() =>
-        call('set_overlay_interaction_mode', {
-          mode: nextOverlayMode(snapshot.overlayMode),
-        }),
-      )
-      return
-    }
+
 
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'd') {
       event.preventDefault()
@@ -216,6 +200,14 @@ export function PanelView() {
         </div>
 
         <div className="window-controls" data-no-drag="true">
+          <button
+            type="button"
+            className="window-btn"
+            title="Settings"
+            onClick={() => runCommand(() => call('open_settings_window'))}
+          >
+            <FiSettings size={14} />
+          </button>
           <button
             type="button"
             className={`window-btn ${snapshot.panelPinned ? 'active' : ''}`}
@@ -300,14 +292,11 @@ export function PanelView() {
             {snapshot.selection ? <FiX size={14} /> : <FiCrop size={14} />}
             <span>{selectionLabel}</span>
           </button>
-        </div>
-      </section>
 
-      <footer className="dock-container">
-        <div className="mac-dock" data-no-drag="true">
           <button
             type="button"
-            className={`dock-icon ${snapshot.aiTranslationEnabled ? 'active' : ''}`}
+            className={`ai-toggle-btn ${snapshot.aiTranslationEnabled ? 'active' : ''}`}
+            data-no-drag="true"
             disabled={busy || !snapshot.selection}
             title="AI Translation"
             onClick={() =>
@@ -316,42 +305,12 @@ export function PanelView() {
               )
             }
           >
-            <FiGlobe />
-          </button>
-          <button
-            type="button"
-            className={`dock-icon ${snapshot.overlayMode !== 'passThrough' ? 'active' : ''}`}
-            disabled={busy || !snapshot.selection}
-            title={snapshot.overlayMode === 'passThrough' ? 'Overlay Mode: View Only' : snapshot.overlayMode === 'selectText' ? 'Overlay Mode: Select Text' : 'Overlay Mode: Drag Window'}
-            onClick={() =>
-              runCommand(() =>
-                call('set_overlay_interaction_mode', {
-                  mode: nextOverlayMode(snapshot.overlayMode),
-                }),
-              )
-            }
-          >
-            {snapshot.overlayMode === 'passThrough' && <FiEye />}
-            {snapshot.overlayMode === 'selectText' && <FiMousePointer />}
-            {snapshot.overlayMode === 'dragWindow' && <FiMove />}
-          </button>
-          <button
-            type="button"
-            className={`dock-icon ${snapshot.debugScreenshotMode ? 'active' : ''}`}
-            disabled={busy}
-            title="Debug Screenshot Mode"
-            onClick={() =>
-              runCommand(() =>
-                call('toggle_debug_screenshot_mode', {
-                  enabled: !snapshot.debugScreenshotMode,
-                }),
-              )
-            }
-          >
-            <FiCamera />
+            <FiGlobe size={16} />
           </button>
         </div>
-      </footer>
+      </section>
+
+
     </main>
   )
 }

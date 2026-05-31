@@ -101,6 +101,7 @@ fn main() {
             commands::get_runtime_capabilities,
             commands::get_runtime_snapshot,
             commands::open_selector_window,
+            commands::open_settings_window,
             commands::panel_close,
             commands::panel_minimize,
             commands::run_prompt_benchmark,

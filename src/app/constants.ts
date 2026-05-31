@@ -94,7 +94,7 @@ export type DebugPayload = {
   timestamp: string
 }
 
-export type AppView = 'panel' | 'selector' | 'overlay'
+export type AppView = 'panel' | 'selector' | 'overlay' | 'settings'
 
 export type RouteInfo = {
   view: AppView

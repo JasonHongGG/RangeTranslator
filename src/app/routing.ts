@@ -61,7 +61,7 @@ export function resolveRouteInfo(): RouteInfo {
 }
 
 function normalizeView(value: string | null | undefined): AppView | null {
-  if (value === 'selector' || value === 'overlay' || value === 'panel') {
+  if (value === 'selector' || value === 'overlay' || value === 'panel' || value === 'settings') {
     return value
   }
 

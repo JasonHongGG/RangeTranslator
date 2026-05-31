@@ -23,6 +23,20 @@
         "resizable": true,
         "alwaysOnTop": false,
         "center": true
+      },
+      {
+        "label": "settings",
+        "title": "Settings",
+        "width": 450,
+        "height": 350,
+        "minWidth": 400,
+        "minHeight": 300,
+        "decorations": false,
+        "transparent": true,
+        "resizable": true,
+        "alwaysOnTop": false,
+        "center": true,
+        "visible": false
       }
     ],
     "security": {

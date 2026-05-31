@@ -139,6 +139,13 @@ pub fn close_selector_window(
 }
 
 #[tauri::command]
+pub async fn open_settings_window(
+    app: AppHandle,
+) -> Result<(), String> {
+    windows::open_settings_window(&app).await
+}
+
+#[tauri::command]
 pub async fn submit_selection(
     app: AppHandle,
     state: State<'_, SharedState>,
