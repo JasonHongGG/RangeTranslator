@@ -427,6 +427,7 @@ pub async fn open_settings_window(app: &AppHandle, state: SharedState) -> Result
     app.run_on_main_thread(move || {
         let result: Result<(), String> = (|| {
             if let Some(window) = app_handle.get_webview_window("settings") {
+                let _ = window.set_always_on_top(is_pinned);
                 window.show().map_err(|error| error.to_string())?;
                 window.set_focus().map_err(|error| error.to_string())?;
                 return Ok(());
