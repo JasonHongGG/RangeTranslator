@@ -14,13 +14,6 @@ import { FiX, FiMousePointer, FiCamera, FiEye, FiMove } from "react-icons/fi"
 
 import type { OverlayInteractionMode, RuntimeSnapshot } from '../types'
 
-const OVERLAY_MODE_ORDER: OverlayInteractionMode[] = ['passThrough', 'selectText', 'dragWindow']
-
-function nextOverlayMode(mode: OverlayInteractionMode): OverlayInteractionMode {
-  const currentIndex = OVERLAY_MODE_ORDER.indexOf(mode)
-  return OVERLAY_MODE_ORDER[(currentIndex + 1 + OVERLAY_MODE_ORDER.length) % OVERLAY_MODE_ORDER.length]
-}
-
 export function SettingsView() {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
   const [busy, setBusy] = useState(false)
@@ -35,15 +28,11 @@ export function SettingsView() {
   useEffect(() => {
     let cancelled = false
     const bootstrap = async () => {
-      if (!isTauri()) {
-        return
-      }
+      if (!isTauri()) return
 
       try {
         const next = await call<RuntimeSnapshot>('get_runtime_snapshot')
-        if (!cancelled) {
-          setSnapshot(next)
-        }
+        if (!cancelled) setSnapshot(next)
       } catch {
         // Browser preview
       }
@@ -53,9 +42,7 @@ export function SettingsView() {
 
     let detach = () => {}
     void watchEvent<RuntimeSnapshot>('runtime-snapshot', applySnapshot).then(
-      (unlisten) => {
-        detach = unlisten
-      },
+      (unlisten) => { detach = unlisten },
     )
 
     return () => {
@@ -65,26 +52,18 @@ export function SettingsView() {
   }, [])
 
   useEffect(() => {
-    if (!isTauri()) {
-      return
-    }
+    if (!isTauri()) return
 
     let detach = () => {}
     void watchEvent<DebugPayload>(DEBUG_EVENT, (payload) => {
       logDebugPayload(payload)
-    }).then((unlisten) => {
-      detach = unlisten
-    })
+    }).then((unlisten) => { detach = unlisten })
 
-    return () => {
-      detach()
-    }
+    return () => { detach() }
   }, [])
 
   const runCommand = async (action: () => Promise<void>) => {
-    if (!isTauri()) {
-      return
-    }
+    if (!isTauri()) return
 
     setBusy(true)
     try {
@@ -95,14 +74,10 @@ export function SettingsView() {
   }
 
   const startDrag = async (event: React.PointerEvent<HTMLElement>) => {
-    if (!settingsWindow || event.button !== 0) {
-      return
-    }
+    if (!settingsWindow || event.button !== 0) return
 
     const target = event.target as HTMLElement
-    if (shouldIgnoreWindowDrag(target)) {
-      return
-    }
+    if (shouldIgnoreWindowDrag(target)) return
 
     try {
       await settingsWindow.startDragging()
@@ -114,9 +89,7 @@ export function SettingsView() {
   const startResize = (direction: ResizeDirection) => async (
     event: React.PointerEvent<HTMLButtonElement>,
   ) => {
-    if (!settingsWindow || event.button !== 0) {
-      return
-    }
+    if (!settingsWindow || event.button !== 0) return
 
     event.preventDefault()
     event.stopPropagation()
@@ -161,45 +134,60 @@ export function SettingsView() {
       </header>
 
       <section className="settings-content" data-tauri-drag-region>
-        <div className="setting-group" data-no-drag="true">
-          <h3>Overlay Mode</h3>
-          <p>Controls how you interact with the overlay window.</p>
-          <button
-            type="button"
-            className={`setting-btn ${snapshot.overlayMode !== 'passThrough' ? 'active' : ''}`}
-            disabled={busy || !snapshot.selection}
-            onClick={() =>
-              runCommand(() =>
-                call('set_overlay_interaction_mode', {
-                  mode: nextOverlayMode(snapshot.overlayMode),
-                }),
-              )
-            }
-          >
-            {snapshot.overlayMode === 'passThrough' && <><FiEye /> <span>View Only</span></>}
-            {snapshot.overlayMode === 'selectText' && <><FiMousePointer /> <span>Select Text</span></>}
-            {snapshot.overlayMode === 'dragWindow' && <><FiMove /> <span>Drag Window</span></>}
-          </button>
+        <div className="setting-segmented" data-no-drag="true">
+          <div className="setting-segmented-header">
+            <FiMove size={18} />
+            <span className="setting-toggle-label">Overlay Mode</span>
+          </div>
+          <div className="segmented-control">
+            <button
+              type="button"
+              className={`segment-btn ${snapshot.overlayMode === 'passThrough' ? 'active' : ''}`}
+              disabled={busy || !snapshot.selection}
+              onClick={() => runCommand(() => call('set_overlay_interaction_mode', { mode: 'passThrough' as OverlayInteractionMode }))}
+            >
+              <FiEye size={14} /> View
+            </button>
+            <button
+              type="button"
+              className={`segment-btn ${snapshot.overlayMode === 'selectText' ? 'active' : ''}`}
+              disabled={busy || !snapshot.selection}
+              onClick={() => runCommand(() => call('set_overlay_interaction_mode', { mode: 'selectText' as OverlayInteractionMode }))}
+            >
+              <FiMousePointer size={14} /> Select
+            </button>
+            <button
+              type="button"
+              className={`segment-btn ${snapshot.overlayMode === 'dragWindow' ? 'active' : ''}`}
+              disabled={busy || !snapshot.selection}
+              onClick={() => runCommand(() => call('set_overlay_interaction_mode', { mode: 'dragWindow' as OverlayInteractionMode }))}
+            >
+              <FiMove size={14} /> Drag
+            </button>
+          </div>
         </div>
 
-        <div className="setting-group" data-no-drag="true">
-          <h3>Debug Screenshot Mode</h3>
-          <p>Allows screenshots for debugging. Content is usually protected.</p>
-          <button
-            type="button"
-            className={`setting-btn ${snapshot.debugScreenshotMode ? 'active' : ''}`}
-            disabled={busy}
-            onClick={() =>
-              runCommand(() =>
-                call('toggle_debug_screenshot_mode', {
-                  enabled: !snapshot.debugScreenshotMode,
-                }),
-              )
-            }
-          >
-            <FiCamera />
-            <span>{snapshot.debugScreenshotMode ? 'Enabled' : 'Disabled'}</span>
-          </button>
+        <div
+          className="setting-toggle"
+          data-no-drag="true"
+          onClick={() => {
+            if (busy) return;
+            runCommand(() =>
+              call('toggle_debug_screenshot_mode', {
+                enabled: !snapshot.debugScreenshotMode,
+              }),
+            )
+          }}
+        >
+          <div className="setting-toggle-info">
+            <div className="setting-toggle-icon">
+              <FiCamera size={18} />
+            </div>
+            <span className="setting-toggle-label">Allow Screenshots</span>
+          </div>
+          <div className={`switch ${snapshot.debugScreenshotMode ? 'active' : ''}`}>
+            <div className="switch-thumb" />
+          </div>
         </div>
       </section>
     </main>

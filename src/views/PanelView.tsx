@@ -15,7 +15,7 @@ import { labelForStatus, shouldIgnoreWindowDrag, toneForStatus } from '../app/ov
 import { FiX, FiMinus, FiPlay, FiPause, FiCrop, FiGlobe, FiArrowRight, FiSettings } from "react-icons/fi";
 import { RiPushpinLine, RiPushpinFill } from "react-icons/ri";
 
-import type { OverlayInteractionMode, RuntimeSnapshot } from '../types'
+import type { RuntimeSnapshot } from '../types'
 
 
 
@@ -276,37 +276,39 @@ export function PanelView() {
             {snapshot.running ? <FiPause /> : <FiPlay />}
           </button>
 
-          <button
-            type="button"
-            className={`region-pill ${snapshot.selection ? 'active' : ''}`}
-            data-no-drag="true"
-            disabled={busy}
-            onClick={() => {
-              if (snapshot.selection) {
-                runCommand(() => call('clear_selection'))
-              } else {
-                runCommand(() => call('open_selector_window'))
-              }
-            }}
-          >
-            {snapshot.selection ? <FiX size={14} /> : <FiCrop size={14} />}
-            <span>{selectionLabel}</span>
-          </button>
+          <div className="secondary-actions">
+            <button
+              type="button"
+              className={`region-pill ${snapshot.selection ? 'active' : ''}`}
+              data-no-drag="true"
+              disabled={busy}
+              onClick={() => {
+                if (snapshot.selection) {
+                  runCommand(() => call('clear_selection'))
+                } else {
+                  runCommand(() => call('open_selector_window'))
+                }
+              }}
+            >
+              {snapshot.selection ? <FiX size={14} /> : <FiCrop size={14} />}
+              <span>{selectionLabel}</span>
+            </button>
 
-          <button
-            type="button"
-            className={`ai-toggle-btn ${snapshot.aiTranslationEnabled ? 'active' : ''}`}
-            data-no-drag="true"
-            disabled={busy || !snapshot.selection}
-            title="AI Translation"
-            onClick={() =>
-              runCommand(() =>
-                call('toggle_ai_translation', { enabled: !snapshot.aiTranslationEnabled }),
-              )
-            }
-          >
-            <FiGlobe size={16} />
-          </button>
+            <button
+              type="button"
+              className={`ai-toggle-btn ${snapshot.aiTranslationEnabled ? 'active' : ''}`}
+              data-no-drag="true"
+              disabled={busy || !snapshot.selection}
+              title="AI Translation"
+              onClick={() =>
+                runCommand(() =>
+                  call('toggle_ai_translation', { enabled: !snapshot.aiTranslationEnabled }),
+                )
+              }
+            >
+              <FiGlobe size={16} />
+            </button>
+          </div>
         </div>
       </section>
 

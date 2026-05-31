@@ -60,7 +60,8 @@ function CompactSelectInner({
     if (!open) return
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      // Use composedPath to correctly handle clicks inside the scrollbar on Windows
+      if (rootRef.current && !event.composedPath().includes(rootRef.current)) {
         setOpen(false)
       }
     }
@@ -85,7 +86,7 @@ function CompactSelectInner({
       <button
         id={buttonId}
         type="button"
-        className="select-trigger"
+        className={`select-trigger ${open ? 'expanded' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={menuId}
@@ -93,7 +94,7 @@ function CompactSelectInner({
         onClick={() => setOpen((current) => !current)}
       >
         <span style={{flex: 1, textAlign: 'center'}}>{activeOption?.nativeLabel ?? value}</span>
-        <FiChevronDown className="select-caret" />
+        <FiChevronDown className="select-caret" style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }} />
       </button>
 
       {open ? (
@@ -102,6 +103,7 @@ function CompactSelectInner({
           className={`select-menu select-menu-${menuSide}`}
           role="listbox"
           aria-labelledby={buttonId}
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           {options.map((option) => {
             const active = option.code === value

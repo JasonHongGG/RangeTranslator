@@ -417,11 +417,12 @@ pub fn selection_or_error(state: &SharedState) -> Result<SelectionRect, String> 
         .map_err(|error| error.to_string())
 }
 
-pub async fn open_settings_window(app: &AppHandle) -> Result<(), String> {
+pub async fn open_settings_window(app: &AppHandle, state: SharedState) -> Result<(), String> {
     use tokio::sync::oneshot;
 
     let (tx, rx) = oneshot::channel();
     let app_handle = app.clone();
+    let is_pinned = state.snapshot().panel_pinned;
 
     app.run_on_main_thread(move || {
         let result: Result<(), String> = (|| {
@@ -440,7 +441,7 @@ pub async fn open_settings_window(app: &AppHandle) -> Result<(), String> {
             .initialization_script(r#"window.__RANGE_TRANSLATOR_VIEW__ = 'settings';"#)
             .decorations(false)
             .transparent(true)
-            .always_on_top(false)
+            .always_on_top(is_pinned)
             .skip_taskbar(false)
             .resizable(true)
             .shadow(true)

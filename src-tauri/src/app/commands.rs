@@ -71,6 +71,10 @@ pub fn toggle_panel_pin(
         .set_always_on_top(enabled)
         .map_err(|error| error.to_string())?;
 
+    if let Some(settings_window) = app.get_webview_window("settings") {
+        let _ = settings_window.set_always_on_top(enabled);
+    }
+
     let snapshot = state.set_panel_pinned(enabled);
     emit_debug(
         &app,
@@ -141,8 +145,9 @@ pub fn close_selector_window(
 #[tauri::command]
 pub async fn open_settings_window(
     app: AppHandle,
+    state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    windows::open_settings_window(&app).await
+    windows::open_settings_window(&app, state.inner_clone()).await
 }
 
 #[tauri::command]
