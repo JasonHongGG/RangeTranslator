@@ -226,6 +226,7 @@ svg { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none
 /* Settings Window */
 .settings-window {
   background: var(--bg-gradient);
+  padding: 0;
 }
 .settings-content {
   flex: 1;
@@ -239,11 +240,12 @@ svg { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none
   padding: 24px 24px 8px 24px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  z-index: 5;
 }
 .settings-header h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--ink-strong);
 }

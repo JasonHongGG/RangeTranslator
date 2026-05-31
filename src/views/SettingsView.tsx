@@ -112,10 +112,13 @@ export function SettingsView() {
         ></button>
       ))}
 
-      <header className="panel-header">
-        <div className="status-indicator" data-no-drag="true">
-          <span style={{ fontWeight: 'bold' }}>Settings</span>
-        </div>
+      <header className="settings-header">
+        <h2 
+          data-no-drag="true" 
+          style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--ink-strong)' }}
+        >
+          Settings
+        </h2>
 
         <div className="window-controls" data-no-drag="true">
           <button
