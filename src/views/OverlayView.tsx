@@ -281,16 +281,40 @@ export function OverlayView() {
         <span className="overlay-corner overlay-corner-br"></span>
       </div>
 
+      {/* Pass 1: Background backdrops to obscure all original text */}
       {deferredBlocks.map((block) => (
+        <div
+          key={`bg-${block.id}`}
+          className="overlay-backdrop"
+          style={{
+            left: toLogicalPixels(block.x, overlayScale) - 12,
+            top: toLogicalPixels(block.y, overlayScale) - 6,
+            width: toLogicalPixels(block.width, overlayScale) + 24,
+            height: Math.max(1, toLogicalPixels(block.height, overlayScale)) + 12,
+            background: block.background,
+          }}
+        />
+      ))}
+
+      {/* Pass 2: Translated text blocks */}
+      {deferredBlocks.map((block) => {
+        const isTranslatingOrDone = snapshot.status === 'translating' || snapshot.status === 'ready' || snapshot.status === 'idle';
+        const isLeftover = snapshot.aiTranslationEnabled && !block.translatedText && isTranslatingOrDone;
+        
+        if (isLeftover) {
+          return null;
+        }
+
+        return (
         <article
           key={block.id}
           className={`overlay-block overlay-block-${block.align} ${block.streaming ? 'overlay-block-streaming' : ''}`}
           data-no-drag={allowsTextSelection ? 'true' : undefined}
           style={{
-            left: toLogicalPixels(block.x, overlayScale),
-            top: toLogicalPixels(block.y, overlayScale),
-            width: toLogicalPixels(block.width, overlayScale),
-            height: Math.max(1, toLogicalPixels(block.height, overlayScale)),
+            left: toLogicalPixels(block.x, overlayScale) - 12,
+            top: toLogicalPixels(block.y, overlayScale) - 6,
+            width: toLogicalPixels(block.width, overlayScale) + 24,
+            minHeight: Math.max(1, toLogicalPixels(block.height, overlayScale)) + 12,
             color: block.foreground,
             background: block.background,
             fontSize: Math.max(10, block.fontSize / Math.max(overlayScale, 1)),
@@ -298,7 +322,8 @@ export function OverlayView() {
         >
           {block.translatedText || block.sourceText}
         </article>
-      ))}
+        );
+      })}
     </div>
   )
 }

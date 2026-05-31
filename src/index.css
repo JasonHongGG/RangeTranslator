@@ -300,6 +300,13 @@ svg { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none
 .overlay-corner-bl { bottom: 1px; left: 1px; border-top-width: 0; border-right-width: 0; border-bottom-left-radius: 8px; }
 .overlay-corner-br { right: 1px; bottom: 1px; border-top-width: 0; border-left-width: 0; border-bottom-right-radius: 8px; }
 
+.overlay-backdrop {
+  position: absolute;
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
 .overlay-block { 
   position: absolute; 
   border-radius: 8px; 
@@ -317,6 +324,7 @@ svg { stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none
   box-shadow: 0 4px 16px rgba(0,0,0,0.1);
   border: 1px solid rgba(0,0,0,0.05);
   font-size: 14px;
+  box-sizing: border-box;
 }
 .overlay-block-streaming { opacity: 0.8; }
 .overlay-block-left { text-align: left; }
