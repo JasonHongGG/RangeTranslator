@@ -10,12 +10,37 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from range_translator_runtime.providers.ai.ollama import OllamaProvider
+from range_translator_runtime.translation import (
+    TranslationOrchestrator,
+    TranslationPromptProfile,
+    TranslationRequest,
+)
+from range_translator_runtime.translation.prompting import (
+    build_output_schema,
+    render_repair_prompt,
+)
+from range_translator_runtime.translation.validation import extract_translation_batch
 
 
 PROMPT = {
     "id": "translation.ui_overlay.default",
-    "system": "Return JSON only.",
-    "userTemplate": "Items: {{all_items_json}} Schema: {{output_schema}}",
+    "label": "UI Overlay Translation Polished",
+    "version": "2.0.0",
+    "task": "desktop-ui-translation",
+    "providerFamily": "ollama-chat",
+    "systemPrompt": "Return JSON only.",
+    "taskContext": "Translate desktop UI copy into polished Traditional Chinese.",
+    "translationTemplate": "Items: {{all_items_json}}\nStyle:\n{{style_rules}}\nQuality:\n{{quality_rules}}\nSchema: {{output_schema}}",
+    "repairTemplate": "Validation error: {{validation_error}}\nItems: {{all_items_json}}\nSchema: {{output_schema}}",
+    "styleDirectives": [
+        "Prefer natural Traditional Chinese UI wording.",
+        "Keep labels concise.",
+    ],
+    "qualityChecks": [
+        "Keep id and index aligned.",
+        "Do not leave ordinary English UI labels untranslated.",
+    ],
+    "sampling": {"temperature": 0.18, "topP": 0.92},
     "outputSchema": '{"detectedSource":"ja-JP","items":[{"id":"<preserve-input-id>","index":0,"translation":"translated text","confidence":0.96}]}',
 }
 
@@ -40,6 +65,19 @@ def source_items() -> list[dict[str, object]]:
 class OllamaProviderAlignmentTests(unittest.TestCase):
     def setUp(self) -> None:
         self.provider = OllamaProvider()
+        self.profile = TranslationPromptProfile.from_payload(PROMPT)
+        self.request = TranslationRequest.from_payload(
+            {
+                "endpoint": "http://127.0.0.1:11434",
+                "providerId": "ollama",
+                "model": "qwen3:8b",
+                "promptProfile": "translation.ui_overlay.default",
+                "sourceLanguage": "en-US",
+                "targetLanguage": "zh-TW",
+                "expectedItemCount": 2,
+                "items": source_items(),
+            }
+        )
 
     def test_extracts_id_aligned_items(self) -> None:
         raw = json.dumps(
@@ -63,15 +101,16 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
             ensure_ascii=False,
         )
 
-        detected_source, items = self.provider._extract_translation_batch(
+        detected_source, items = extract_translation_batch(
             raw,
-            source_items(),
+            tuple(self.request.items),
             "auto",
+            "zh-TW",
         )
 
         self.assertEqual(detected_source, "en-US")
-        self.assertEqual([item["id"] for item in items], ["7:1/span-0", "7:1/span-1"])
-        self.assertEqual([item["translation"] for item in items], ["設定層級已恢復", "同步釘選"])
+        self.assertEqual([item.id for item in items], ["7:1/span-0", "7:1/span-1"])
+        self.assertEqual([item.translation for item in items], ["設定層級已恢復", "同步釘選"])
 
     def test_accepts_legacy_source_id_alias_when_index_matches(self) -> None:
         raw = json.dumps(
@@ -95,14 +134,15 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
             ensure_ascii=False,
         )
 
-        detected_source, items = self.provider._extract_translation_batch(
+        detected_source, items = extract_translation_batch(
             raw,
-            source_items(),
+            tuple(self.request.items),
             "auto",
+            "zh-TW",
         )
 
         self.assertEqual(detected_source, "en-US")
-        self.assertEqual([item["id"] for item in items], ["7:1/span-0", "7:1/span-1"])
+        self.assertEqual([item.id for item in items], ["7:1/span-0", "7:1/span-1"])
 
     def test_rejects_merged_output(self) -> None:
         raw = json.dumps(
@@ -120,7 +160,7 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(RuntimeError, "returned 1 items for 2 source items"):
-            self.provider._extract_translation_batch(raw, source_items(), "auto")
+            extract_translation_batch(raw, tuple(self.request.items), "auto", "zh-TW")
 
     def test_rejects_unexpected_id(self) -> None:
         raw = json.dumps(
@@ -144,7 +184,7 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(RuntimeError, "unexpected item id/index"):
-            self.provider._extract_translation_batch(raw, source_items(), "auto")
+            extract_translation_batch(raw, tuple(self.request.items), "auto", "zh-TW")
 
     def test_rejects_reordered_items(self) -> None:
         raw = json.dumps(
@@ -168,7 +208,7 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(RuntimeError, "out of order"):
-            self.provider._extract_translation_batch(raw, source_items(), "auto")
+            extract_translation_batch(raw, tuple(self.request.items), "auto", "zh-TW")
 
     def test_empty_translation_is_not_replaced_with_source_text(self) -> None:
         raw = json.dumps(
@@ -181,9 +221,9 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
             ensure_ascii=False,
         )
 
-        _, items = self.provider._extract_translation_batch(raw, source_items(), "auto")
+        _, items = extract_translation_batch(raw, tuple(self.request.items), "auto", "zh-TW")
 
-        self.assertEqual(items[0]["translation"], "")
+        self.assertEqual(items[0].translation, "")
 
     def test_rejects_immediate_repeated_phrase(self) -> None:
         raw = json.dumps(
@@ -207,13 +247,36 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(RuntimeError, "immediate repeated phrase"):
-            self.provider._extract_translation_batch(raw, source_items(), "auto")
+            extract_translation_batch(raw, tuple(self.request.items), "auto", "zh-TW")
+
+    def test_rejects_untranslated_plain_english_ui_label(self) -> None:
+        raw = json.dumps(
+            {
+                "items": [
+                    {
+                        "id": "7:1/span-0",
+                        "index": 0,
+                        "translation": "Settings Layering Restored",
+                        "confidence": 0.8,
+                    },
+                    {
+                        "id": "7:1/span-1",
+                        "index": 1,
+                        "translation": "同步釘選",
+                        "confidence": 0.8,
+                    },
+                ]
+            },
+            ensure_ascii=False,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "kept the source wording"):
+            extract_translation_batch(raw, tuple(self.request.items), "en-US", "zh-TW")
 
     def test_repair_prompt_omits_invalid_response_echo(self) -> None:
-        prompt = self.provider._render_repair_prompt(
-            source_items(),
-            "en-US",
-            "zh-TW",
+        prompt = render_repair_prompt(
+            self.profile,
+            self.request,
             PROMPT["outputSchema"],
             "AI provider returned items out of order",
         )
@@ -222,7 +285,7 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
         self.assertIn("Validation error", prompt)
 
     def test_build_output_schema_uses_actual_first_item_id(self) -> None:
-        schema = self.provider._build_output_schema(source_items(), PROMPT["outputSchema"])
+        schema = build_output_schema(tuple(self.request.items), PROMPT["outputSchema"])
 
         self.assertIn('"id": "7:1/span-0"', schema)
         self.assertNotIn('"id": "source-0"', schema)
@@ -233,10 +296,10 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
                 super().__init__()
                 self.calls = 0
 
-            def _resolve_model(self, endpoint: str, current_model: str) -> str:
+            def resolve_model(self, endpoint: str, current_model: str) -> str:
                 return "qwen3:8b"
 
-            def _chat_json(self, endpoint: str, payload: dict[str, object]) -> str:
+            def chat_json(self, endpoint: str, payload: dict[str, object]) -> str:
                 self.calls += 1
                 if self.calls == 1:
                     return json.dumps(
@@ -272,9 +335,15 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
                     ensure_ascii=False,
                 )
 
-        provider = RepairingProvider()
+        class StubPromptRepository:
+            def load(self, prompt_id: str) -> dict[str, object]:
+                self.last_prompt_id = prompt_id
+                return PROMPT
 
-        response = provider.translate(
+        provider = RepairingProvider()
+        orchestrator = TranslationOrchestrator(StubPromptRepository(), {"ollama": provider})
+
+        response = orchestrator.translate(
             {
                 "endpoint": "http://127.0.0.1:11434",
                 "providerId": "ollama",
@@ -284,8 +353,7 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
                 "targetLanguage": "zh-TW",
                 "expectedItemCount": 2,
                 "items": source_items(),
-            },
-            PROMPT,
+            }
         )
 
         self.assertEqual(provider.calls, 2)
@@ -296,10 +364,10 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
 
     def test_translate_writes_ai_log_file(self) -> None:
         class LoggingProvider(OllamaProvider):
-            def _resolve_model(self, endpoint: str, current_model: str) -> str:
+            def resolve_model(self, endpoint: str, current_model: str) -> str:
                 return "qwen3:8b"
 
-            def _chat_json(self, endpoint: str, payload: dict[str, object]) -> str:
+            def chat_json(self, endpoint: str, payload: dict[str, object]) -> str:
                 return json.dumps(
                     {
                         "items": [
@@ -320,13 +388,19 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
                     ensure_ascii=False,
                 )
 
+        class StubPromptRepository:
+            def load(self, prompt_id: str) -> dict[str, object]:
+                self.last_prompt_id = prompt_id
+                return PROMPT
+
         provider = LoggingProvider()
+        orchestrator = TranslationOrchestrator(StubPromptRepository(), {"ollama": provider})
         previous = os.environ.get("RANGE_TRANSLATOR_AI_LOG_DIR")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             os.environ["RANGE_TRANSLATOR_AI_LOG_DIR"] = temp_dir
             try:
-                provider.translate(
+                orchestrator.translate(
                     {
                         "_rtRequestId": 42,
                         "endpoint": "http://127.0.0.1:11434",
@@ -337,8 +411,7 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
                         "targetLanguage": "zh-TW",
                         "expectedItemCount": 2,
                         "items": source_items(),
-                    },
-                    PROMPT,
+                    }
                 )
             finally:
                 if previous is None:
@@ -354,23 +427,30 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
             self.assertEqual(document["metadata"]["itemCount"], 2)
             self.assertEqual(document["response"]["finalResult"]["providerId"], "ollama")
             self.assertEqual(len(document["request"]["chatRequests"]), 1)
+            self.assertIn("translationTemplate", document["request"]["prompt"])
 
     def test_translate_logs_errors(self) -> None:
         class FailingProvider(OllamaProvider):
-            def _resolve_model(self, endpoint: str, current_model: str) -> str:
+            def resolve_model(self, endpoint: str, current_model: str) -> str:
                 return "qwen3:8b"
 
-            def _chat_json(self, endpoint: str, payload: dict[str, object]) -> str:
+            def chat_json(self, endpoint: str, payload: dict[str, object]) -> str:
                 raise RuntimeError("synthetic failure")
 
+        class StubPromptRepository:
+            def load(self, prompt_id: str) -> dict[str, object]:
+                self.last_prompt_id = prompt_id
+                return PROMPT
+
         provider = FailingProvider()
+        orchestrator = TranslationOrchestrator(StubPromptRepository(), {"ollama": provider})
         previous = os.environ.get("RANGE_TRANSLATOR_AI_LOG_DIR")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             os.environ["RANGE_TRANSLATOR_AI_LOG_DIR"] = temp_dir
             try:
                 with self.assertRaisesRegex(RuntimeError, "synthetic failure"):
-                    provider.translate(
+                    orchestrator.translate(
                         {
                             "_rtRequestId": 7,
                             "endpoint": "http://127.0.0.1:11434",
@@ -381,8 +461,7 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
                             "targetLanguage": "zh-TW",
                             "expectedItemCount": 2,
                             "items": source_items(),
-                        },
-                        PROMPT,
+                        }
                     )
             finally:
                 if previous is None:

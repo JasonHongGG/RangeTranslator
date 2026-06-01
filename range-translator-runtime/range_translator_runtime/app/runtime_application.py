@@ -7,6 +7,7 @@ from typing import Any
 from range_translator_runtime.prompts import PromptRepository
 from range_translator_runtime.providers import build_ai_providers, build_ocr_providers
 from range_translator_runtime.runtime_types import EventEmitter
+from range_translator_runtime.translation import TranslationOrchestrator
 
 
 class RuntimeApplication:
@@ -21,6 +22,10 @@ class RuntimeApplication:
         self.prompt_repository = PromptRepository(prompt_root)
         self.ai_providers = build_ai_providers()
         self.ocr_providers = build_ocr_providers()
+        self.translation_orchestrator = TranslationOrchestrator(
+            prompt_repository=self.prompt_repository,
+            ai_providers=self.ai_providers,
+        )
 
     def dispatch(
         self,
@@ -57,15 +62,7 @@ class RuntimeApplication:
         payload: dict[str, Any],
         emit_event: EventEmitter | None = None,
     ) -> dict[str, Any]:
-        provider_id = str(payload.get("providerId") or "ollama")
-        prompt_profile = str(
-            payload.get("promptProfile") or "translation.ui_overlay.default"
-        )
-        prompt = self.prompt_repository.load(prompt_profile)
-        provider = self.ai_providers.get(provider_id)
-        if provider is None:
-            raise RuntimeError(f"AI provider not found: {provider_id}")
-        return provider.translate(payload, prompt, emit_event)
+        return self.translation_orchestrator.translate(payload, emit_event)
 
     def recognize(self, payload: dict[str, Any]) -> dict[str, Any]:
         provider_id = str(
