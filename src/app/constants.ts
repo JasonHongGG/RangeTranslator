@@ -28,6 +28,7 @@ export const PREVIEW_SNAPSHOT: RuntimeSnapshot = {
 export const PREVIEW_TRANSLATION: TranslationPayload = {
   generation: 0,
   selection: PREVIEW_SNAPSHOT.selection,
+  capture: null,
   sourceLanguage: 'auto',
   targetLanguage: 'zh-TW',
   detectedSource: 'ja-JP',

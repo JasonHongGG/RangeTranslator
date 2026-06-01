@@ -121,6 +121,7 @@ impl SharedState {
         inner.translation = TranslationPayload {
             generation: inner.pipeline_token,
             selection: inner.snapshot.selection.clone(),
+            capture: None,
             source_language: settings.source_language,
             target_language: settings.target_language,
             visible_layer: VisibleLayer::None,
@@ -152,6 +153,7 @@ impl SharedState {
         inner.translation = TranslationPayload {
             generation: inner.pipeline_token,
             selection: Some(selection),
+            capture: None,
             source_language: inner.snapshot.source_language.clone(),
             target_language: inner.snapshot.target_language.clone(),
             visible_layer: VisibleLayer::None,
@@ -278,10 +280,6 @@ impl SharedState {
         inner.snapshot.last_updated = payload.captured_at.clone();
         inner.snapshot.last_detected_source = payload.detected_source.clone();
         inner.snapshot.last_error = None;
-        if payload.visible_layer == VisibleLayer::Translation {
-            inner.snapshot.ai_provider = payload.provider.clone();
-            inner.snapshot.prompt_profile = payload.prompt_profile.clone();
-        }
         inner.translation = payload;
         inner.snapshot.clone()
     }
@@ -297,4 +295,32 @@ impl SharedState {
 
 pub fn timestamp() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn translation_payload_does_not_overwrite_ai_provider_stack() {
+        let state = SharedState::new("http://localhost:11434".to_string(), "qwen3:8b".to_string());
+
+        state.set_provider_stack(
+            "paddleocr".to_string(),
+            "ollama".to_string(),
+            "translation.ui_overlay.default".to_string(),
+        );
+
+        let snapshot = state.set_translation(TranslationPayload {
+            generation: 1,
+            visible_layer: VisibleLayer::Translation,
+            provider: "paddleocr".to_string(),
+            prompt_profile: String::new(),
+            ..TranslationPayload::default()
+        });
+
+        assert_eq!(snapshot.ocr_provider, "paddleocr");
+        assert_eq!(snapshot.ai_provider, "ollama");
+        assert_eq!(snapshot.prompt_profile, "translation.ui_overlay.default");
+    }
 }

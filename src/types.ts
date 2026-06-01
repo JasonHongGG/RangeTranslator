@@ -27,6 +27,21 @@ export type SelectionRect = {
   height: number
 }
 
+export type CaptureCoordinateSpace = 'selectionPhysicalPixels'
+
+export type CaptureMetadata = {
+  coordinateSpace: CaptureCoordinateSpace
+  displayOriginX: number
+  displayOriginY: number
+  displayWidth: number
+  displayHeight: number
+  captureOriginX: number
+  captureOriginY: number
+  captureWidth: number
+  captureHeight: number
+  scaleFactor: number
+}
+
 export type OverlaySourceUnit = {
   id: string
   order: number
@@ -54,6 +69,7 @@ export type OverlayTranslationUnit = {
 export type TranslationPayload = {
   generation: number
   selection: SelectionRect | null
+  capture: CaptureMetadata | null
   sourceLanguage: string
   targetLanguage: string
   detectedSource: string | null
@@ -69,6 +85,7 @@ export type TranslationPayload = {
 export type TranslationPartialPayload = {
   generation: number
   selection: SelectionRect | null
+  capture: CaptureMetadata | null
   sourceLanguage: string
   targetLanguage: string
   detectedSource: string | null

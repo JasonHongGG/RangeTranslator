@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
+import traceback
 import urllib.error
 import urllib.request
 from typing import Any
 
+from range_translator_runtime.ai_log import TranslateAiLog
 from range_translator_runtime.prompts import pretty_language, render_template
 from range_translator_runtime.runtime_types import EventEmitter, PromptPayload
 
@@ -54,93 +57,105 @@ class OllamaProvider:
         prompt: PromptPayload,
         emit_event: EventEmitter | None = None,
     ) -> dict[str, Any]:
-        items = self._normalize_source_items(list(payload.get("items") or []))
-        expected_item_count = int(payload.get("expectedItemCount") or len(items))
-        source_language = payload.get("sourceLanguage") or "auto"
-        target_language = payload.get("targetLanguage") or "zh-TW"
-        endpoint = str(payload.get("endpoint") or "http://127.0.0.1:11434").rstrip("/")
-
-        if expected_item_count != len(items):
-            raise RuntimeError(
-                f"AI request expected {expected_item_count} items but received {len(items)} source items"
-            )
-
-        if not items:
-            return {
-                "providerId": self.id,
-                "model": str(payload.get("model") or "discovering"),
-                "promptProfile": prompt["id"],
-                "detectedSource": source_language,
-                "items": [],
-            }
-
-        model = self._resolve_model(endpoint, str(payload.get("model") or "discovering"))
-
-        output_schema = prompt.get(
-            "outputSchema",
-            '{"detectedSource":"ja-JP","items":[{"id":"source-0","index":0,"translation":"translated text","confidence":0.96}]}',
-        )
-        all_items_json = json.dumps(items, ensure_ascii=False)
-        context_text = str(
-            payload.get("contextText")
-            or "\n".join(str(item["text"]) for item in items)
-        )
-
-        rendered_prompt = render_template(
-            prompt["userTemplate"],
-            {
-                "source_language": source_language,
-                "target_language": target_language,
-                "source_language_name": pretty_language(source_language),
-                "target_language_name": pretty_language(target_language),
-                "line_index": "0",
-                "line_number": "1",
-                "line_count": str(len(items)),
-                "item_count": str(len(items)),
-                "expected_item_count": str(expected_item_count),
-                "current_text_json": json.dumps(items[0]["text"], ensure_ascii=False),
-                "all_items_json": all_items_json,
-                "context_text_json": json.dumps(context_text, ensure_ascii=False),
-                "output_schema": output_schema,
-            },
-        )
-
-        request_payload = self._build_chat_payload(model, prompt["system"], rendered_prompt)
-        content = self._chat_json(
-            endpoint,
-            request_payload,
-        )
+        ai_log = TranslateAiLog(payload, prompt)
+        repair_count = 0
 
         try:
-            detected_source, translated_items = self._extract_translation_batch(
-                content,
-                items,
-                source_language,
+            items = self._normalize_source_items(list(payload.get("items") or []))
+            expected_item_count = int(payload.get("expectedItemCount") or len(items))
+            source_language = payload.get("sourceLanguage") or "auto"
+            target_language = payload.get("targetLanguage") or "zh-TW"
+            endpoint = str(payload.get("endpoint") or "http://127.0.0.1:11434").rstrip("/")
+
+            if expected_item_count != len(items):
+                raise RuntimeError(
+                    f"AI request expected {expected_item_count} items but received {len(items)} source items"
+                )
+
+            if not items:
+                result = {
+                    "providerId": self.id,
+                    "model": str(payload.get("model") or "discovering"),
+                    "promptProfile": prompt["id"],
+                    "detectedSource": source_language,
+                    "items": [],
+                }
+                ai_log.finalize_success(result, repair_count)
+                return result
+
+            model = self._resolve_model(endpoint, str(payload.get("model") or "discovering"))
+
+            output_schema = prompt.get(
+                "outputSchema",
+                '{"detectedSource":"ja-JP","items":[{"id":"source-0","index":0,"translation":"translated text","confidence":0.96}]}',
             )
-        except RuntimeError as error:
-            repair_prompt = self._render_repair_prompt(
-                items,
-                source_language,
-                target_language,
-                output_schema,
-                content,
-                str(error),
-            )
-            repaired_content = self._chat_json(
-                endpoint,
-                self._build_chat_payload(model, prompt["system"], repair_prompt),
-            )
-            detected_source, translated_items = self._extract_translation_batch(
-                repaired_content,
-                items,
-                source_language,
+            all_items_json = json.dumps(items, ensure_ascii=False)
+
+            rendered_prompt = render_template(
+                prompt["userTemplate"],
+                {
+                    "source_language": source_language,
+                    "target_language": target_language,
+                    "source_language_name": pretty_language(source_language),
+                    "target_language_name": pretty_language(target_language),
+                    "line_index": "0",
+                    "line_number": "1",
+                    "line_count": str(len(items)),
+                    "item_count": str(len(items)),
+                    "expected_item_count": str(expected_item_count),
+                    "current_text_json": json.dumps(items[0]["text"], ensure_ascii=False),
+                    "all_items_json": all_items_json,
+                    "output_schema": output_schema,
+                },
             )
 
-        if emit_event is not None:
-            for index, item in enumerate(translated_items):
-                emit_event(
-                    "translation_partial",
-                    {
+            request_payload = self._build_chat_payload(model, prompt["system"], rendered_prompt)
+            ai_log.add_chat_request(attempt=1, repair=False, payload=request_payload)
+            content = self._chat_json(
+                endpoint,
+                request_payload,
+            )
+            ai_log.add_model_output(attempt=1, repair=False, content=content)
+
+            try:
+                detected_source, translated_items = self._extract_translation_batch(
+                    content,
+                    items,
+                    source_language,
+                )
+            except RuntimeError as error:
+                repair_count = 1
+                repair_prompt = self._render_repair_prompt(
+                    items,
+                    source_language,
+                    target_language,
+                    output_schema,
+                    str(error),
+                )
+                repair_request_payload = self._build_chat_payload(
+                    model,
+                    prompt["system"],
+                    repair_prompt,
+                )
+                ai_log.add_chat_request(
+                    attempt=2,
+                    repair=True,
+                    payload=repair_request_payload,
+                )
+                repaired_content = self._chat_json(
+                    endpoint,
+                    repair_request_payload,
+                )
+                ai_log.add_model_output(attempt=2, repair=True, content=repaired_content)
+                detected_source, translated_items = self._extract_translation_batch(
+                    repaired_content,
+                    items,
+                    source_language,
+                )
+
+            if emit_event is not None:
+                for index, item in enumerate(translated_items):
+                    partial_payload = {
                         "sourceId": item["id"],
                         "index": item["index"],
                         "providerId": self.id,
@@ -150,16 +165,26 @@ class OllamaProvider:
                         "translatedText": item["translation"],
                         "confidence": item["confidence"],
                         "done": index == len(translated_items) - 1,
-                    },
-                )
+                    }
+                    emit_event("translation_partial", partial_payload)
+                    ai_log.add_partial_event(partial_payload)
 
-        return {
-            "providerId": self.id,
-            "model": model,
-            "promptProfile": prompt["id"],
-            "detectedSource": detected_source,
-            "items": translated_items,
-        }
+            result = {
+                "providerId": self.id,
+                "model": model,
+                "promptProfile": prompt["id"],
+                "detectedSource": detected_source,
+                "items": translated_items,
+            }
+            ai_log.finalize_success(result, repair_count)
+            return result
+        except Exception as error:
+            ai_log.finalize_error(
+                error_message=str(error),
+                traceback_text=traceback.format_exc(),
+                repair_count=repair_count,
+            )
+            raise
 
     def _build_chat_payload(self, model: str, system_prompt: str, user_prompt: str) -> dict[str, Any]:
         request_payload = {
@@ -322,7 +347,26 @@ class OllamaProvider:
         if returned_sequence != expected_sequence:
             raise RuntimeError("AI provider returned items out of order")
 
+        self._validate_translated_items(source_items, translated_items)
+
         return detected_source, translated_items
+
+    def _validate_translated_items(
+        self,
+        source_items: list[dict[str, Any]],
+        translated_items: list[dict[str, Any]],
+    ) -> None:
+        for source_item, translated_item in zip(source_items, translated_items):
+            translation = str(translated_item["translation"])
+            if self._has_immediate_phrase_repeat(translation):
+                raise RuntimeError(
+                    f"AI provider item {translated_item['id']} contains an immediate repeated phrase"
+                )
+
+            if self._looks_like_repeated_source_leak(translation, str(source_item["text"])):
+                raise RuntimeError(
+                    f"AI provider item {translated_item['id']} repeated the source text instead of translating it"
+                )
 
     def _normalize_source_items(self, raw_items: list[Any]) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
@@ -368,7 +412,6 @@ class OllamaProvider:
         source_language: str,
         target_language: str,
         output_schema: str,
-        invalid_content: str,
         validation_error: str,
     ) -> str:
         return (
@@ -378,12 +421,50 @@ class OllamaProvider:
             f"Target language: {pretty_language(target_language)} ({target_language}).\n"
             f"Validation error: {validation_error}\n"
             f"Expected source items JSON: {json.dumps(source_items, ensure_ascii=False)}\n"
-            f"Invalid previous response: {invalid_content}\n"
             f"Required schema: {output_schema}\n"
             "Rules: return exactly one item per source item; preserve every id and index exactly; "
             "translate each item independently while using the whole list as context; never merge, split, "
-            "drop, reorder, or replace source ids."
+            "drop, reorder, or replace source ids; never repeat a phrase twice in immediate succession."
         )
+
+    def _looks_like_repeated_source_leak(self, translation: str, source_text: str) -> bool:
+        normalized_translation = self._compact_phrase_probe(translation)
+        normalized_source = self._compact_phrase_probe(source_text)
+        return bool(
+            normalized_source
+            and normalized_translation
+            and normalized_translation == normalized_source * 2
+        )
+
+    def _has_immediate_phrase_repeat(self, value: str) -> bool:
+        compact = self._compact_phrase_probe(value)
+        if len(compact) < 8:
+            return False
+
+        max_span = min(len(compact) // 2, 24)
+        for span in range(max_span, 3, -1):
+            for start in range(0, len(compact) - (span * 2) + 1):
+                left = compact[start : start + span]
+                right = compact[start + span : start + (span * 2)]
+                if left == right and len(set(left)) > 1:
+                    return True
+
+        tokens = [token for token in re.split(r"\s+", value.strip()) if token]
+        if len(tokens) < 2:
+            return False
+
+        max_token_span = min(len(tokens) // 2, 4)
+        for span in range(max_token_span, 0, -1):
+            for start in range(0, len(tokens) - (span * 2) + 1):
+                left = tokens[start : start + span]
+                right = tokens[start + span : start + (span * 2)]
+                if left == right and len("".join(left)) >= 6:
+                    return True
+
+        return False
+
+    def _compact_phrase_probe(self, value: str) -> str:
+        return re.sub(r"[\s\u3000,，.。;；:：!?！？()（）\[\]{}'\"`]+", "", value)
 
     def _extract_translation_envelope(self, raw_content: str) -> dict[str, Any]:
         content = raw_content.strip()

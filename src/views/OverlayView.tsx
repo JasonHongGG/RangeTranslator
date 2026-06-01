@@ -37,6 +37,7 @@ export function OverlayView() {
   const [overlayScale, setOverlayScale] = useState(1)
   const deferredSourceUnits = useDeferredValue(translation.sourceUnits)
   const deferredTranslationUnits = useDeferredValue(translation.translationUnits)
+  const renderScale = translation.capture?.scaleFactor ?? overlayScale
   const overlayWindow = useMemo(() => currentTauriWindow(), [])
   const boundsRef = useRef<SelectionRect | null>(PREVIEW_SNAPSHOT.selection)
   const overlayBoundsSyncArmedRef = useRef(false)
@@ -287,10 +288,10 @@ export function OverlayView() {
           key={`bg-${block.id}`}
           className="overlay-backdrop"
           style={{
-            left: toLogicalPixels(block.x, overlayScale) - 12,
-            top: toLogicalPixels(block.y, overlayScale) - 6,
-            width: toLogicalPixels(block.width, overlayScale) + 24,
-            height: Math.max(1, toLogicalPixels(block.height, overlayScale)) + 12,
+            left: toLogicalPixels(block.x, renderScale) - 12,
+            top: toLogicalPixels(block.y, renderScale) - 6,
+            width: toLogicalPixels(block.width, renderScale) + 24,
+            height: Math.max(1, toLogicalPixels(block.height, renderScale)) + 12,
             background: block.background,
           }}
         />
@@ -320,13 +321,13 @@ export function OverlayView() {
           className={`overlay-block overlay-block-${block.align} ${translationUnit?.streaming ? 'overlay-block-streaming' : ''}`}
           data-no-drag={allowsTextSelection ? 'true' : undefined}
           style={{
-            left: toLogicalPixels(block.x, overlayScale) - 12,
-            top: toLogicalPixels(block.y, overlayScale) - 6,
-            width: toLogicalPixels(block.width, overlayScale) + 24,
-            minHeight: Math.max(1, toLogicalPixels(block.height, overlayScale)) + 12,
+            left: toLogicalPixels(block.x, renderScale) - 12,
+            top: toLogicalPixels(block.y, renderScale) - 6,
+            width: toLogicalPixels(block.width, renderScale) + 24,
+            minHeight: Math.max(1, toLogicalPixels(block.height, renderScale)) + 12,
             color: block.foreground,
             background: block.background,
-            fontSize: Math.max(10, block.fontSize / Math.max(overlayScale, 1)),
+            fontSize: Math.max(10, block.fontSize / Math.max(renderScale, 1)),
           }}
         >
           {text}

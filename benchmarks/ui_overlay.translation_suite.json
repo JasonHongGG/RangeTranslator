@@ -60,6 +60,19 @@
         { "id": "source-3", "translation": "同步釘選" }
       ],
       "promptProfile": "translation.ui_overlay.default"
+    },
+    {
+      "id": "duplicate-phrase-risk",
+      "description": "Single-line output must not repeat the same phrase twice in immediate succession",
+      "sourceLanguage": "en-US",
+      "targetLanguage": "zh-TW",
+      "items": [
+        { "id": "source-0", "text": "a conductor with few sub agents to update the existing change spec, architecture, test plan, prototype, tech spec and implementation plan" }
+      ],
+      "expectedItems": [
+        { "id": "source-0", "translation": "一個帶有幾個子代理的導演器，用來更新現有的變更規格、架構、測試計畫、原型、技術規格與實作計畫" }
+      ],
+      "promptProfile": "translation.ui_overlay.default"
     }
   ]
 }

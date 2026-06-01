@@ -75,6 +75,28 @@ pub struct PixelRect {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub enum CaptureCoordinateSpace {
+    #[default]
+    SelectionPhysicalPixels,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureMetadata {
+    pub coordinate_space: CaptureCoordinateSpace,
+    pub display_origin_x: i32,
+    pub display_origin_y: i32,
+    pub display_width: u32,
+    pub display_height: u32,
+    pub capture_origin_x: i32,
+    pub capture_origin_y: i32,
+    pub capture_width: u32,
+    pub capture_height: u32,
+    pub scale_factor: f32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub enum TranslationUnitState {
     #[default]
     Pending,
@@ -117,6 +139,7 @@ pub struct OverlayTranslationUnit {
 pub struct TranslationPayload {
     pub generation: u64,
     pub selection: Option<SelectionRect>,
+    pub capture: Option<CaptureMetadata>,
     pub source_language: String,
     pub target_language: String,
     pub detected_source: Option<String>,
@@ -134,6 +157,7 @@ impl Default for TranslationPayload {
         Self {
             generation: 0,
             selection: None,
+            capture: None,
             source_language: "auto".to_string(),
             target_language: "zh-TW".to_string(),
             detected_source: None,
@@ -153,6 +177,7 @@ impl Default for TranslationPayload {
 pub struct TranslationPartialPayload {
     pub generation: u64,
     pub selection: Option<SelectionRect>,
+    pub capture: Option<CaptureMetadata>,
     pub source_language: String,
     pub target_language: String,
     pub detected_source: Option<String>,
@@ -207,7 +232,6 @@ pub struct AiTranslationRequest {
     pub source_language: String,
     pub target_language: String,
     pub expected_item_count: usize,
-    pub context_text: String,
     pub items: Vec<AiTranslationSourceItem>,
 }
 

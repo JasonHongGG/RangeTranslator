@@ -56,7 +56,9 @@ def serve(runtime_script: Path) -> int:
             request = json.loads(line)
             request_id = request.get("requestId")
             subcommand = request.get("subcommand", "status")
-            payload = request.get("payload") or {}
+            payload = dict(request.get("payload") or {})
+            payload["_rtRequestId"] = request_id
+            payload["_rtSubcommand"] = subcommand
 
             def emit_event(event_name: str, event_payload: dict[str, Any]) -> None:
                 sys.stdout.write(

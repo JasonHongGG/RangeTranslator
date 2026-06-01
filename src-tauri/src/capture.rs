@@ -2,7 +2,7 @@ use anyhow::{Context, Result, anyhow};
 use image::RgbaImage;
 use screenshots::Screen;
 
-use crate::models::{PixelRect, SelectionRect};
+use crate::models::{CaptureCoordinateSpace, CaptureMetadata, PixelRect, SelectionRect};
 
 const FRAME_SIGNATURE_GRID: usize = 12;
 const FRAME_SIGNATURE_BUCKETS: usize = FRAME_SIGNATURE_GRID * FRAME_SIGNATURE_GRID;
@@ -14,6 +14,7 @@ const FRAME_SIGNATURE_CHANGED_CELLS: u32 = 4;
 #[derive(Debug, Clone)]
 pub struct CapturedFrame {
     pub image: RgbaImage,
+    pub metadata: CaptureMetadata,
 }
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,39 @@ pub struct DesktopBounds {
     pub y: i32,
     pub width: u32,
     pub height: u32,
+}
+
+fn physical_origin(value: i32, scale_factor: f32) -> i32 {
+    ((value as f32) * scale_factor).round() as i32
+}
+
+fn physical_size(value: u32, scale_factor: f32) -> u32 {
+    ((value as f32) * scale_factor).round().max(1.0) as u32
+}
+
+fn logical_offset(value: i32, scale_factor: f32) -> i32 {
+    ((value as f32) / scale_factor).round() as i32
+}
+
+fn logical_size(value: u32, scale_factor: f32) -> u32 {
+    ((value as f32) / scale_factor).round().max(1.0) as u32
+}
+
+fn physical_display_bounds(screen: &Screen) -> DesktopBounds {
+    let scale_factor = screen.display_info.scale_factor;
+    DesktopBounds {
+        x: physical_origin(screen.display_info.x, scale_factor),
+        y: physical_origin(screen.display_info.y, scale_factor),
+        width: physical_size(screen.display_info.width, scale_factor),
+        height: physical_size(screen.display_info.height, scale_factor),
+    }
+}
+
+fn selection_fits_bounds(selection: &SelectionRect, bounds: &DesktopBounds) -> bool {
+    selection.x >= bounds.x
+        && selection.y >= bounds.y
+        && selection.x + selection.width as i32 <= bounds.x + bounds.width as i32
+        && selection.y + selection.height as i32 <= bounds.y + bounds.height as i32
 }
 
 #[derive(Debug, Clone)]
@@ -87,22 +121,26 @@ pub fn virtual_desktop_bounds() -> Result<DesktopBounds> {
     let screens = Screen::all().context("failed to enumerate displays")?;
     let left = screens
         .iter()
-        .map(|screen| screen.display_info.x)
+        .map(physical_display_bounds)
+        .map(|bounds| bounds.x)
         .min()
         .unwrap_or_default();
     let top = screens
         .iter()
-        .map(|screen| screen.display_info.y)
+        .map(physical_display_bounds)
+        .map(|bounds| bounds.y)
         .min()
         .unwrap_or_default();
     let right = screens
         .iter()
-        .map(|screen| screen.display_info.x + screen.display_info.width as i32)
+        .map(physical_display_bounds)
+        .map(|bounds| bounds.x + bounds.width as i32)
         .max()
         .unwrap_or(1280);
     let bottom = screens
         .iter()
-        .map(|screen| screen.display_info.y + screen.display_info.height as i32)
+        .map(physical_display_bounds)
+        .map(|bounds| bounds.y + bounds.height as i32)
         .max()
         .unwrap_or(720);
 
@@ -121,24 +159,51 @@ pub fn capture_region(selection: &SelectionRect) -> Result<CapturedFrame> {
     let screen = screens
         .into_iter()
         .find(|screen| {
-            let info = &screen.display_info;
-            center_x >= info.x
-                && center_x < info.x + info.width as i32
-                && center_y >= info.y
-                && center_y < info.y + info.height as i32
+            let bounds = physical_display_bounds(screen);
+            center_x >= bounds.x
+                && center_x < bounds.x + bounds.width as i32
+                && center_y >= bounds.y
+                && center_y < bounds.y + bounds.height as i32
         })
         .context("selected region is outside the available displays")?;
 
-    let local_x = selection.x - screen.display_info.x;
-    let local_y = selection.y - screen.display_info.y;
+    let display_bounds = physical_display_bounds(&screen);
+    if !selection_fits_bounds(selection, &display_bounds) {
+        return Err(anyhow!(
+            "selected region must stay within a single display when DPI scaling is enabled"
+        ));
+    }
+
+    let local_physical_x = selection.x - display_bounds.x;
+    let local_physical_y = selection.y - display_bounds.y;
+    let local_x = logical_offset(local_physical_x, screen.display_info.scale_factor);
+    let local_y = logical_offset(local_physical_y, screen.display_info.scale_factor);
+    let capture_width = logical_size(selection.width, screen.display_info.scale_factor);
+    let capture_height = logical_size(selection.height, screen.display_info.scale_factor);
     let captured = screen
-        .capture_area(local_x, local_y, selection.width, selection.height)
+        .capture_area(local_x, local_y, capture_width, capture_height)
         .map_err(|error| anyhow!(error.to_string()))?;
 
-    let image = RgbaImage::from_raw(captured.width(), captured.height(), captured.into_raw())
+    let captured_width = captured.width();
+    let captured_height = captured.height();
+    let image = RgbaImage::from_raw(captured_width, captured_height, captured.into_raw())
         .context("failed to materialize the captured frame")?;
 
-    Ok(CapturedFrame { image })
+    Ok(CapturedFrame {
+        image,
+        metadata: CaptureMetadata {
+            coordinate_space: CaptureCoordinateSpace::SelectionPhysicalPixels,
+            display_origin_x: display_bounds.x,
+            display_origin_y: display_bounds.y,
+            display_width: display_bounds.width,
+            display_height: display_bounds.height,
+            capture_origin_x: local_physical_x,
+            capture_origin_y: local_physical_y,
+            capture_width: captured_width,
+            capture_height: captured_height,
+            scale_factor: screen.display_info.scale_factor,
+        },
+    })
 }
 
 pub fn estimate_colors(image: &RgbaImage, rect: &PixelRect) -> (String, String) {

@@ -59,11 +59,6 @@ pub async fn run_default_prompt_benchmark(
                     source_language: case.source_language.clone(),
                     target_language: case.target_language.clone(),
                     expected_item_count: items.len(),
-                    context_text: items
-                        .iter()
-                        .map(|item| item.text.as_str())
-                        .collect::<Vec<_>>()
-                        .join("\n"),
                     items,
                 },
                 Arc::new(|_| {}),

@@ -24,6 +24,9 @@ the original text positions, colors, and masking rectangles, while AI produces
 `translationUnits` keyed by `sourceId`. Translation output is never allowed to
 fall back to OCR text. If a model omits, merges, reorders, or mislabels an item,
 that item is marked missing/failed and the original screen text remains masked.
+Overlapping OCR lines with the same text are canonicalized before translation so
+duplicate detections do not get sent to the model as if they were separate source
+regions.
 
 Frontend modules:
 
@@ -38,6 +41,12 @@ Sidecar runtime:
 - `range-translator-runtime/range_translator_runtime/prompts/`: prompt repository and prompt rendering helpers
 - `range-translator-runtime/prompts/`: external prompt profiles
 - `benchmarks/`: benchmark corpus for prompt and provider evaluation
+
+Translate call logging:
+
+- Each sidecar `translate` call now writes a dedicated JSON record under `range-translator-runtime/.runtime/ai-log/`
+- Filenames follow `yyyymmdd_hhmmss_translate_<random>.json`
+- Each record contains `metadata`, `request`, and `response`, including the normalized request payload, actual Ollama chat bodies, raw model outputs, streamed partial events, final parsed result, and error traceback when a call fails
 
 ## Provider Model
 
@@ -84,6 +93,7 @@ The sidecar runtime supports these environment variables:
 - `RANGE_TRANSLATOR_PYTHON`: explicit Python executable for the sidecar
 - `RANGE_TRANSLATOR_PROMPT_DIR`: explicit path to prompt assets
 - `RANGE_TRANSLATOR_BENCHMARK_DIR`: explicit path to benchmark suites
+- `RANGE_TRANSLATOR_AI_LOG_DIR`: optional override for the translate AI log directory
 - `RANGE_TRANSLATOR_OLLAMA_TAGS_TIMEOUT_SECONDS`: override the Ollama `/api/tags` discovery timeout in the sidecar
 - `RANGE_TRANSLATOR_OLLAMA_CHAT_TIMEOUT_SECONDS`: override the Ollama `/api/chat` timeout in the sidecar
 - `RANGE_TRANSLATOR_OLLAMA_KEEP_ALIVE`: override the Ollama model keep-alive sent by the sidecar
@@ -140,6 +150,10 @@ The following issues already happened in this repo and should be treated as hard
 - A successful `discovering` flow depends on the sidecar choosing the right model, not just any available model. We verified on this endpoint that Python `urllib` and the current structured prompt both work when the provider uses `qwen3:8b`, while the old discovery priority incorrectly preferred `mistral-small3.2:latest`. Keep realtime-safe models such as `qwen3:8b` at the front of the sidecar preference list.
 - When a remote Ollama endpoint stalls, do not hammer it every frame. This pipeline now enters a short AI retry cooldown while keeping original text masked and surfacing a concise warning in the runtime snapshot instead of spamming the same full traceback on every capture cycle.
 - Overlay translation must stay source-anchored. The AI provider may receive full context for quality, but its response must return exactly one item for every OCR source unit with the same `id` and `index`. Do not reintroduce position-only `translations[]` arrays or any fallback that copies OCR source text into translation output.
+- OCR canonicalization in the Rust pipeline should only merge duplicate lines when both text and geometry overlap strongly. Do not collapse same-text labels that appear in different places on screen.
+- The overlay geometry path is now tied to capture metadata. Treat selection bounds as physical pixels, convert them to logical coordinates only for the screenshots crate call, and normalize OCR rectangles back into selection-relative physical pixels before the frontend renders them.
+- The default overlay prompt should use the ordered OCR item list as its single shared context. Do not feed the model a second full-text copy of the same source content unless you also add a clear regression test for duplicate-phrase contamination.
+- Every translate call should leave behind an auditable JSON record in `.runtime/ai-log`. Logging failure must never crash the runtime, but a successful call path should normally produce one file per translate request.
 - Frontend route resolution and view bootstrap must not assume `getCurrentWindow()` is always synchronously available during initial render. If that access throws before React mounts the view tree, the visible symptom is a blank white window with no panel UI.
 
 Run the frontend and Tauri app:

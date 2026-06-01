@@ -36,6 +36,7 @@ export function mergeTranslationPartial(
       ? {
           generation: partial.generation,
           selection: partial.selection,
+          capture: partial.capture,
           sourceLanguage: partial.sourceLanguage,
           targetLanguage: partial.targetLanguage,
           detectedSource: partial.detectedSource,
@@ -89,6 +90,7 @@ export function mergeTranslationPartial(
   return {
     generation: partial.generation,
     selection: partial.selection ?? baseline.selection,
+    capture: partial.capture ?? baseline.capture,
     sourceLanguage: partial.sourceLanguage || baseline.sourceLanguage,
     targetLanguage: partial.targetLanguage || baseline.targetLanguage,
     detectedSource: partial.detectedSource ?? baseline.detectedSource,
@@ -134,6 +136,7 @@ export function mergeTranslationUpdate(
 
   return {
     ...next,
+    capture: next.capture ?? current.capture,
     sourceUnits: Array.from(sourceMap.values()).sort((left, right) => left.order - right.order),
     translationUnits: Array.from(translationMap.values()).sort(
       (left, right) => left.order - right.order,
