@@ -1,7 +1,6 @@
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isTauri } from '../bridge'
 import type {
-  OverlayTranslationUnit,
   RuntimeStatus,
   SelectionRect,
   TranslationPartialPayload,
@@ -31,10 +30,14 @@ export function mergeTranslationPartial(
     return current
   }
 
+  const replacesFrame =
+    partial.generation > current.generation || partial.frameId !== current.frameId
+
   const baseline: TranslationPayload =
-    partial.generation > current.generation
+    replacesFrame
       ? {
           generation: partial.generation,
+          frameId: partial.frameId,
           selection: partial.selection,
           capture: partial.capture,
           sourceLanguage: partial.sourceLanguage,
@@ -89,6 +92,7 @@ export function mergeTranslationPartial(
 
   return {
     generation: partial.generation,
+    frameId: partial.frameId,
     selection: partial.selection ?? baseline.selection,
     capture: partial.capture ?? baseline.capture,
     sourceLanguage: partial.sourceLanguage || baseline.sourceLanguage,
@@ -112,50 +116,13 @@ export function mergeTranslationUpdate(
     return current
   }
 
-  if (next.generation > current.generation) {
-    return next
-  }
-
-  const sourceMap = new Map(current.sourceUnits.map((unit) => [unit.id, unit]))
-  for (const unit of next.sourceUnits) {
-    const previous = sourceMap.get(unit.id)
-    sourceMap.set(unit.id, previous ? { ...previous, ...unit } : unit)
-  }
-
-  const translationMap = new Map(
-    current.translationUnits.map((unit) => [unit.sourceId, unit]),
-  )
-  for (const unit of next.translationUnits) {
-    const previous = translationMap.get(unit.sourceId)
-    if (previous && shouldKeepExistingTranslation(previous, unit)) {
-      translationMap.set(unit.sourceId, previous)
-    } else {
-      translationMap.set(unit.sourceId, unit)
-    }
-  }
+  const canReuseCurrentCapture =
+    next.generation === current.generation && next.frameId === current.frameId
 
   return {
     ...next,
-    capture: next.capture ?? current.capture,
-    sourceUnits: Array.from(sourceMap.values()).sort((left, right) => left.order - right.order),
-    translationUnits: Array.from(translationMap.values()).sort(
-      (left, right) => left.order - right.order,
-    ),
+    capture: next.capture ?? (canReuseCurrentCapture ? current.capture : null),
   }
-}
-
-function shouldKeepExistingTranslation(
-  previous: OverlayTranslationUnit | undefined,
-  next: OverlayTranslationUnit,
-) {
-  if (!previous) {
-    return false
-  }
-
-  const nextIsEmptyWaitingState =
-    (next.state === 'pending' || next.state === 'disabled') && !next.text.trim()
-  const previousHasTranslation = previous.state === 'translated' && previous.text.trim()
-  return Boolean(nextIsEmptyWaitingState && previousHasTranslation)
 }
 
 export function sameSelection(

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::{Context, Result, anyhow};
 use image::RgbaImage;
 use screenshots::Screen;
@@ -232,21 +234,25 @@ pub fn estimate_colors(image: &RgbaImage, rect: &PixelRect) -> (String, String) 
         }
     }
 
-    let background = average_color(if ring.is_empty() { &inner } else { &ring });
+    let background = dominant_color(if ring.is_empty() { &inner } else { &ring });
     let mut scored = inner
         .iter()
         .map(|pixel| (color_distance(*pixel, background), *pixel))
         .collect::<Vec<_>>();
     scored.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let take = (scored.len() / 5).max(1);
-    let foreground = average_color(
-        &scored
-            .iter()
-            .rev()
-            .take(take)
-            .map(|(_, pixel)| *pixel)
-            .collect::<Vec<_>>(),
-    );
+    let take = (scored.len() / 3).max(1);
+    let foreground_candidates = scored
+        .iter()
+        .rev()
+        .take(take)
+        .filter(|(distance, _)| *distance >= 18.0)
+        .map(|(_, pixel)| *pixel)
+        .collect::<Vec<_>>();
+    let foreground = dominant_color(if foreground_candidates.is_empty() {
+        &inner
+    } else {
+        &foreground_candidates
+    });
 
     let resolved_foreground = if color_distance(foreground, background) < 28.0 {
         if luminance(background[0], background[1], background[2]) > 148.0 {
@@ -259,6 +265,24 @@ pub fn estimate_colors(image: &RgbaImage, rect: &PixelRect) -> (String, String) 
     };
 
     (to_hex(resolved_foreground), to_hex(background))
+}
+
+fn dominant_color(pixels: &[[u8; 4]]) -> [u8; 4] {
+    if pixels.is_empty() {
+        return [32, 32, 32, 255];
+    }
+
+    let mut buckets = HashMap::<(u8, u8, u8), Vec<[u8; 4]>>::new();
+    for pixel in pixels {
+        let key = (pixel[0] / 16, pixel[1] / 16, pixel[2] / 16);
+        buckets.entry(key).or_default().push(*pixel);
+    }
+
+    buckets
+        .into_values()
+        .max_by_key(|bucket| bucket.len())
+        .map(|bucket| average_color(&bucket))
+        .unwrap_or([32, 32, 32, 255])
 }
 
 fn average_color(pixels: &[[u8; 4]]) -> [u8; 4] {
@@ -298,4 +322,55 @@ fn luminance(red: u8, green: u8, blue: u8) -> f32 {
 
 fn to_hex(pixel: [u8; 4]) -> String {
     format!("#{:02X}{:02X}{:02X}", pixel[0], pixel[1], pixel[2])
+}
+
+#[cfg(test)]
+mod tests {
+    use image::Rgba;
+
+    use super::*;
+
+    #[test]
+    fn estimate_colors_prefers_dominant_background_over_ring_noise() {
+        let mut image = RgbaImage::from_pixel(48, 24, Rgba([30, 30, 30, 255]));
+        for x in 0..6 {
+            image.put_pixel(x, 0, Rgba([220, 40, 40, 255]));
+        }
+        for y in 6..14 {
+            for x in 14..26 {
+                image.put_pixel(x, y, Rgba([240, 230, 210, 255]));
+            }
+        }
+
+        let (foreground, background) = estimate_colors(
+            &image,
+            &PixelRect {
+                x: 10,
+                y: 4,
+                width: 24,
+                height: 14,
+            },
+        );
+
+        assert_eq!(background, "#1E1E1E");
+        assert_eq!(foreground, "#F0E6D2");
+    }
+
+    #[test]
+    fn estimate_colors_falls_back_to_high_contrast_when_inner_block_is_flat() {
+        let image = RgbaImage::from_pixel(24, 16, Rgba([236, 234, 228, 255]));
+
+        let (foreground, background) = estimate_colors(
+            &image,
+            &PixelRect {
+                x: 4,
+                y: 4,
+                width: 14,
+                height: 8,
+            },
+        );
+
+        assert_eq!(background, "#ECEAE4");
+        assert_eq!(foreground, "#121A21");
+    }
 }

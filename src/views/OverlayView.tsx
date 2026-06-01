@@ -18,10 +18,8 @@ import { formatUnknown, writeLocalDebug } from '../app/debug'
 import {
   mergeTranslationPartial,
   mergeTranslationUpdate,
-  readWindowScale,
   sameSelection,
   shouldIgnoreWindowDrag,
-  toLogicalPixels,
 } from '../app/overlay'
 import type {
   OverlayInteractionMode,
@@ -34,10 +32,13 @@ import type {
 export function OverlayView() {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
   const [translation, setTranslation] = useState<TranslationPayload>(PREVIEW_TRANSLATION)
-  const [overlayScale, setOverlayScale] = useState(1)
-  const deferredSourceUnits = useDeferredValue(translation.sourceUnits)
-  const deferredTranslationUnits = useDeferredValue(translation.translationUnits)
-  const renderScale = translation.capture?.scaleFactor ?? overlayScale
+  const deferredTranslation = useDeferredValue(translation)
+  const deferredSourceUnits = deferredTranslation.sourceUnits
+  const deferredTranslationUnits = deferredTranslation.translationUnits
+  const translationBySourceId = useMemo(
+    () => new Map(deferredTranslationUnits.map((unit) => [unit.sourceId, unit])),
+    [deferredTranslationUnits],
+  )
   const overlayWindow = useMemo(() => currentTauriWindow(), [])
   const boundsRef = useRef<SelectionRect | null>(PREVIEW_SNAPSHOT.selection)
   const overlayBoundsSyncArmedRef = useRef(false)
@@ -72,13 +73,10 @@ export function OverlayView() {
     }
 
     try {
-      const [position, size, scaleFactor] = await Promise.all([
+      const [position, size] = await Promise.all([
         overlayWindow.innerPosition(),
         overlayWindow.innerSize(),
-        overlayWindow.scaleFactor(),
       ])
-
-      setOverlayScale(scaleFactor)
 
       const nextSelection = {
         x: Math.round(position.x),
@@ -108,23 +106,14 @@ export function OverlayView() {
     let stopped = false
     const bootstrap = async () => {
       try {
-        const requests: Array<Promise<unknown>> = [
+        const [nextSnapshot, nextTranslation] = await Promise.all([
           call<RuntimeSnapshot>('get_runtime_snapshot'),
           call<TranslationPayload>('get_latest_translation'),
-        ]
-
-        if (overlayWindow) {
-          requests.push(readWindowScale(overlayWindow))
-        }
-
-        const [nextSnapshot, nextTranslation, nextScale] = await Promise.all(requests)
+        ])
 
         if (!stopped) {
-          setSnapshot(nextSnapshot as RuntimeSnapshot)
-          setTranslation(nextTranslation as TranslationPayload)
-          if (typeof nextScale === 'number') {
-            setOverlayScale(nextScale)
-          }
+          setSnapshot(nextSnapshot)
+          setTranslation(nextTranslation)
         }
       } catch {
         // Overlay keeps the preview payload when the backend is not ready yet.
@@ -288,10 +277,10 @@ export function OverlayView() {
           key={`bg-${block.id}`}
           className="overlay-backdrop"
           style={{
-            left: toLogicalPixels(block.x, renderScale) - 12,
-            top: toLogicalPixels(block.y, renderScale) - 6,
-            width: toLogicalPixels(block.width, renderScale) + 24,
-            height: Math.max(1, toLogicalPixels(block.height, renderScale)) + 12,
+            left: block.renderRect.x,
+            top: block.renderRect.y,
+            width: Math.max(1, block.renderRect.width),
+            height: Math.max(1, block.renderRect.height),
             background: block.background,
           }}
         />
@@ -299,11 +288,9 @@ export function OverlayView() {
 
       {/* Pass 2: Translated text blocks */}
       {deferredSourceUnits.map((block) => {
-        const translationUnit = deferredTranslationUnits.find(
-          (unit) => unit.sourceId === block.id,
-        )
+        const translationUnit = translationBySourceId.get(block.id)
         const text =
-          translation.visibleLayer === 'ocr'
+          deferredTranslation.visibleLayer === 'ocr'
             ? block.sourceText
             : translationUnit &&
                 (translationUnit.state === 'translated' || translationUnit.streaming) &&
@@ -316,22 +303,22 @@ export function OverlayView() {
         }
 
         return (
-        <article
-          key={block.id}
-          className={`overlay-block overlay-block-${block.align} ${translationUnit?.streaming ? 'overlay-block-streaming' : ''}`}
-          data-no-drag={allowsTextSelection ? 'true' : undefined}
-          style={{
-            left: toLogicalPixels(block.x, renderScale) - 12,
-            top: toLogicalPixels(block.y, renderScale) - 6,
-            width: toLogicalPixels(block.width, renderScale) + 24,
-            minHeight: Math.max(1, toLogicalPixels(block.height, renderScale)) + 12,
-            color: block.foreground,
-            background: block.background,
-            fontSize: Math.max(10, block.fontSize / Math.max(renderScale, 1)),
-          }}
-        >
-          {text}
-        </article>
+          <article
+            key={block.id}
+            className={`overlay-block overlay-block-${block.align} ${translationUnit?.streaming ? 'overlay-block-streaming' : ''}`}
+            data-no-drag={allowsTextSelection ? 'true' : undefined}
+            style={{
+              left: block.renderRect.x,
+              top: block.renderRect.y,
+              width: Math.max(1, block.renderRect.width),
+              height: Math.max(1, block.renderRect.height),
+              color: block.foreground,
+              fontSize: Math.max(10, block.fontSize),
+              lineHeight: `${Math.max(block.fontSize, block.lineHeight)}px`,
+            }}
+          >
+            {text}
+          </article>
         );
       })}
     </div>

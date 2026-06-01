@@ -17,9 +17,10 @@ use crate::{
     capture::{FrameSignature, capture_region, estimate_colors},
     models::{
         AiTranslationDelta, AiTranslationRequest, AiTranslationResponse, AiTranslationSourceItem,
-        CaptureMetadata, OcrRecognitionLine, OcrRecognitionRequest, OverlaySourceUnit,
-        OverlayTranslationUnit, PartialUpdateStage, PipelineSettings, PixelRect, RuntimeStatus,
-        SelectionRect, TextAlign, TranslationPartialPayload, TranslationPayload,
+        CaptureMetadata, OcrRecognitionLine, OcrRecognitionRequest, OverlayLogicalRect,
+        OverlaySourceUnit, OverlayTranslationUnit, PartialUpdateStage, PipelineSettings,
+        PixelRect, RuntimeStatus, SelectionRect, TextAlign, TranslationPartialPayload,
+        TranslationPayload,
         TranslationUnitState, VisibleLayer,
     },
     sidecar::runtime_gateway,
@@ -55,6 +56,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
     let mut detected_source_hint: Option<String> = None;
     let mut ai_retry_after: Option<Instant> = None;
     let mut ai_error_summary: Option<String> = None;
+    let mut frame_sequence = 0_u64;
 
     loop {
         if !state.is_token_active(token) {
@@ -98,6 +100,8 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
 
         pending_signature = None;
         last_signature = Some(signature);
+        frame_sequence = frame_sequence.saturating_add(1);
+        let frame_id = format!("{token}:{frame_sequence}");
 
         emit_snapshot(&app, &state.set_status(RuntimeStatus::Recognizing, "OCR"));
         let encoded_frame = encode_frame_png_base64(&frame)?;
@@ -132,7 +136,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             );
         }
 
-        let source_units = build_source_units(&frame, &canonical_lines, &selection);
+        let source_units = build_source_units(&frame, &canonical_lines, &selection, &frame_id);
         let pending_translation_units = build_translation_units(
             &source_units,
             if snapshot.ai_translation_enabled {
@@ -161,6 +165,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                 &app,
                 &state,
                 token,
+                &frame_id,
                 &selection,
                 Some(capture_metadata.clone()),
                 &snapshot.source_language,
@@ -186,6 +191,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                     &app,
                     &state,
                     token,
+                    &frame_id,
                     &selection,
                     Some(capture_metadata.clone()),
                     &snapshot.source_language,
@@ -221,6 +227,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             &app,
             &state,
             token,
+            &frame_id,
             &selection,
             Some(capture_metadata.clone()),
             &snapshot.source_language,
@@ -262,17 +269,13 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                 id: unit.id.clone(),
                 index: unit.order,
                 text: unit.source_text.clone(),
-                rect: PixelRect {
-                    x: unit.x,
-                    y: unit.y,
-                    width: unit.width,
-                    height: unit.height,
-                },
+                rect: unit.source_rect.clone(),
             })
             .collect::<Vec<_>>();
         let app_handle = app.clone();
         let selection_for_partial = selection.clone();
         let capture_for_partial = capture_metadata.clone();
+        let frame_id_for_partial = frame_id.clone();
         let source_language_for_partial = snapshot.source_language.clone();
         let target_language_for_partial = snapshot.target_language.clone();
         let source_units_for_partial = source_units.clone();
@@ -305,6 +308,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                     &app_handle,
                     &TranslationPartialPayload {
                         generation: token,
+                        frame_id: frame_id_for_partial.clone(),
                         selection: Some(selection_for_partial.clone()),
                         capture: Some(capture_for_partial.clone()),
                         source_language: source_language_for_partial.clone(),
@@ -379,6 +383,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                         &app,
                         &state,
                         token,
+                        &frame_id,
                         &selection,
                         Some(capture_metadata.clone()),
                         &snapshot.source_language,
@@ -422,6 +427,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
 
         let payload = TranslationPayload {
             generation: token,
+            frame_id: frame_id.clone(),
             selection: Some(selection.clone()),
             capture: Some(capture_metadata.clone()),
             source_language: snapshot.source_language.clone(),
@@ -440,6 +446,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             &app,
             &TranslationPartialPayload {
                 generation: token,
+                frame_id,
                 selection: payload.selection.clone(),
                 capture: payload.capture.clone(),
                 source_language: payload.source_language.clone(),
@@ -470,6 +477,7 @@ fn build_source_units(
     frame: &crate::capture::CapturedFrame,
     lines: &[OcrRecognitionLine],
     selection: &SelectionRect,
+    frame_id: &str,
 ) -> Vec<OverlaySourceUnit> {
     let mut ordered_lines = lines.iter().collect::<Vec<_>>();
     ordered_lines.sort_by_key(|line| (line.rect.y, line.rect.x));
@@ -477,7 +485,7 @@ fn build_source_units(
     ordered_lines
         .into_iter()
         .enumerate()
-        .map(|(order, line)| build_source_unit(frame, line, order, selection))
+        .map(|(order, line)| build_source_unit(frame, line, order, selection, frame_id))
         .collect()
 }
 
@@ -523,10 +531,30 @@ fn should_merge_ocr_line(left: &OcrRecognitionLine, right: &OcrRecognitionLine) 
 }
 
 fn rects_refer_to_same_region(left: &PixelRect, right: &PixelRect) -> bool {
-    rect_intersection_area(left, right) > 0
-        && (rect_iou(left, right) >= 0.35
-            || rect_contains_center(left, right)
-            || rect_contains_center(right, left))
+    let intersection = rect_intersection_area(left, right) as f32;
+    if intersection <= 0.0 {
+        return false;
+    }
+
+    let smaller_area = (left.width * left.height).min(right.width * right.height) as f32;
+    let overlap_over_smaller = intersection / smaller_area.max(1.0);
+
+    rect_iou(left, right) >= 0.72
+        || overlap_over_smaller >= 0.9
+        || (overlap_over_smaller >= 0.78 && rect_centers_are_close(left, right))
+}
+
+fn rect_centers_are_close(left: &PixelRect, right: &PixelRect) -> bool {
+    let left_center_x = left.x as f32 + left.width as f32 / 2.0;
+    let left_center_y = left.y as f32 + left.height as f32 / 2.0;
+    let right_center_x = right.x as f32 + right.width as f32 / 2.0;
+    let right_center_y = right.y as f32 + right.height as f32 / 2.0;
+
+    let allowed_dx = left.width.min(right.width) as f32 * 0.18;
+    let allowed_dy = left.height.min(right.height) as f32 * 0.22;
+
+    (left_center_x - right_center_x).abs() <= allowed_dx.max(1.0)
+        && (left_center_y - right_center_y).abs() <= allowed_dy.max(1.0)
 }
 
 fn rect_intersection_area(left: &PixelRect, right: &PixelRect) -> u32 {
@@ -558,15 +586,6 @@ fn rect_iou(left: &PixelRect, right: &PixelRect) -> f32 {
     intersection / union
 }
 
-fn rect_contains_center(container: &PixelRect, target: &PixelRect) -> bool {
-    let center_x = target.x + (target.width / 2);
-    let center_y = target.y + (target.height / 2);
-    center_x >= container.x
-        && center_x <= container.x + container.width
-        && center_y >= container.y
-        && center_y <= container.y + container.height
-}
-
 fn merge_pixel_rect(left: &PixelRect, right: &PixelRect) -> PixelRect {
     let x = left.x.min(right.x);
     let y = left.y.min(right.y);
@@ -586,23 +605,52 @@ fn build_source_unit(
     line: &OcrRecognitionLine,
     order: usize,
     selection: &SelectionRect,
+    frame_id: &str,
 ) -> OverlaySourceUnit {
     let (foreground, background) = estimate_colors(&frame.image, &line.rect);
     let normalized_rect = normalize_rect_to_selection(&line.rect, frame, selection);
+    let render_rect = render_rect_from_selection_rect(&normalized_rect, frame.metadata.scale_factor);
+    let (font_size, line_height) = estimate_text_metrics(&render_rect, &line.text);
+
     OverlaySourceUnit {
-        id: format!("source-{order}"),
+        id: format!("{frame_id}/span-{order}"),
+        frame_id: frame_id.to_string(),
         order,
         source_text: line.text.clone(),
-        x: normalized_rect.x,
-        y: normalized_rect.y,
-        width: normalized_rect.width.max(1),
-        height: normalized_rect.height.max(1),
-        font_size: (normalized_rect.height as f32 * 0.64).clamp(9.0, 42.0),
+        source_rect: PixelRect {
+            x: normalized_rect.x,
+            y: normalized_rect.y,
+            width: normalized_rect.width.max(1),
+            height: normalized_rect.height.max(1),
+        },
+        render_rect,
+        font_size,
+        line_height,
         confidence: line.confidence,
         foreground,
         background,
         align: TextAlign::Left,
     }
+}
+
+fn render_rect_from_selection_rect(rect: &PixelRect, scale_factor: f32) -> OverlayLogicalRect {
+    let scale = scale_factor.max(1.0);
+
+    OverlayLogicalRect {
+        x: rect.x as f32 / scale,
+        y: rect.y as f32 / scale,
+        width: rect.width.max(1) as f32 / scale,
+        height: rect.height.max(1) as f32 / scale,
+    }
+}
+
+fn estimate_text_metrics(render_rect: &OverlayLogicalRect, text: &str) -> (f32, f32) {
+    let char_count = text.chars().count().max(1) as f32;
+    let height_bound = (render_rect.height * 0.82).clamp(10.0, 34.0);
+    let width_bound = ((render_rect.width / char_count).max(6.0) * 1.6).clamp(10.0, 34.0);
+    let font_size = height_bound.min(width_bound).clamp(10.0, 34.0);
+    let line_height = (font_size * 1.12).min((render_rect.height * 1.04).max(font_size));
+    (font_size, line_height)
 }
 
 fn normalize_rect_to_selection(
@@ -691,6 +739,7 @@ fn emit_overlay_payload(
     app: &AppHandle,
     state: &SharedState,
     generation: u64,
+    frame_id: &str,
     selection: &crate::models::SelectionRect,
     capture: Option<CaptureMetadata>,
     source_language: &str,
@@ -717,6 +766,7 @@ fn emit_overlay_payload(
 
     let payload = TranslationPayload {
         generation,
+        frame_id: frame_id.to_string(),
         selection: Some(selection.clone()),
         capture: capture.clone(),
         source_language: source_language.to_string(),
@@ -738,6 +788,7 @@ fn emit_overlay_payload(
         app,
         &TranslationPartialPayload {
             generation,
+            frame_id: frame_id.to_string(),
             selection: Some(selection.clone()),
             capture,
             source_language: source_language.to_string(),
@@ -790,7 +841,27 @@ fn translation_cache() -> &'static Mutex<HashMap<String, AiTranslationResponse>>
 }
 
 fn build_translation_cache_key(request: &AiTranslationRequest) -> Result<String> {
-    serde_json::to_string(request).context("failed to serialize translation cache key")
+    serde_json::to_string(&json!({
+        "endpoint": request.endpoint,
+        "providerId": request.provider_id,
+        "model": request.model,
+        "promptProfile": request.prompt_profile,
+        "sourceLanguage": request.source_language,
+        "targetLanguage": request.target_language,
+        "expectedItemCount": request.expected_item_count,
+        "items": request
+            .items
+            .iter()
+            .map(|item| {
+                json!({
+                    "index": item.index,
+                    "text": item.text,
+                    "rect": item.rect,
+                })
+            })
+            .collect::<Vec<_>>(),
+    }))
+    .context("failed to serialize translation cache key")
 }
 
 #[cfg(test)]
@@ -850,6 +921,7 @@ mod tests {
                 width: 320,
                 height: 180,
             },
+            "7:1",
         );
 
         assert_eq!(
@@ -864,7 +936,7 @@ mod tests {
                 .iter()
                 .map(|unit| unit.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["source-0", "source-1", "source-2"]
+            vec!["7:1/span-0", "7:1/span-1", "7:1/span-2"]
         );
     }
 
@@ -880,6 +952,7 @@ mod tests {
                 width: 320,
                 height: 180,
             },
+            "7:2",
         );
         let response = AiTranslationResponse {
             provider_id: "ollama".to_string(),
@@ -887,7 +960,7 @@ mod tests {
             prompt_profile: "translation.ui_overlay.default".to_string(),
             detected_source: "en-US".to_string(),
             items: vec![AiTranslationItem {
-                id: "source-0".to_string(),
+                id: "7:2/span-0".to_string(),
                 index: 0,
                 translation: "設定".to_string(),
                 confidence: 0.8,
@@ -938,12 +1011,17 @@ mod tests {
                 width: 480,
                 height: 270,
             },
+            "7:3",
         );
 
-        assert_eq!(units[0].x, 60);
-        assert_eq!(units[0].y, 40);
-        assert_eq!(units[0].width, 120);
-        assert_eq!(units[0].height, 30);
+        assert_eq!(units[0].source_rect.x, 60);
+        assert_eq!(units[0].source_rect.y, 40);
+        assert_eq!(units[0].source_rect.width, 120);
+        assert_eq!(units[0].source_rect.height, 30);
+        assert!((units[0].render_rect.x - 40.0).abs() < 0.001);
+        assert!((units[0].render_rect.y - 26.666666).abs() < 0.01);
+        assert!((units[0].render_rect.width - 80.0).abs() < 0.001);
+        assert!((units[0].render_rect.height - 20.0).abs() < 0.001);
     }
 
     #[test]
@@ -988,5 +1066,65 @@ mod tests {
         assert_eq!(canonical[0].rect.width, 182);
         assert_eq!(canonical[0].rect.height, 32);
         assert_eq!(canonical[0].confidence, 0.92);
+    }
+
+    #[test]
+    fn canonicalize_ocr_lines_keeps_adjacent_same_text_regions_separate() {
+        let canonical = canonicalize_ocr_lines(&[
+            OcrRecognitionLine {
+                text: "General".to_string(),
+                rect: PixelRect {
+                    x: 10,
+                    y: 20,
+                    width: 76,
+                    height: 24,
+                },
+                confidence: 0.88,
+            },
+            OcrRecognitionLine {
+                text: "General".to_string(),
+                rect: PixelRect {
+                    x: 92,
+                    y: 22,
+                    width: 74,
+                    height: 24,
+                },
+                confidence: 0.9,
+            },
+        ]);
+
+        assert_eq!(canonical.len(), 2);
+    }
+
+    #[test]
+    fn translation_cache_key_ignores_frame_scoped_span_ids() {
+        let request_a = AiTranslationRequest {
+            endpoint: "http://127.0.0.1:11434".to_string(),
+            provider_id: "ollama".to_string(),
+            model: "qwen3:8b".to_string(),
+            prompt_profile: "translation.ui_overlay.default".to_string(),
+            source_language: "en-US".to_string(),
+            target_language: "zh-TW".to_string(),
+            expected_item_count: 1,
+            items: vec![AiTranslationSourceItem {
+                id: "7:4/span-0".to_string(),
+                index: 0,
+                text: "General".to_string(),
+                rect: PixelRect {
+                    x: 10,
+                    y: 20,
+                    width: 76,
+                    height: 24,
+                },
+            }],
+        };
+
+        let mut request_b = request_a.clone();
+        request_b.items[0].id = "7:5/span-0".to_string();
+
+        assert_eq!(
+            build_translation_cache_key(&request_a).unwrap(),
+            build_translation_cache_key(&request_b).unwrap(),
+        );
     }
 }

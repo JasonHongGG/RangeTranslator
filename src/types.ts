@@ -42,15 +42,22 @@ export type CaptureMetadata = {
   scaleFactor: number
 }
 
-export type OverlaySourceUnit = {
-  id: string
-  order: number
-  sourceText: string
+export type OverlayLogicalRect = {
   x: number
   y: number
   width: number
   height: number
+}
+
+export type OverlaySourceUnit = {
+  id: string
+  frameId: string
+  order: number
+  sourceText: string
+  sourceRect: SelectionRect
+  renderRect: OverlayLogicalRect
   fontSize: number
+  lineHeight: number
   confidence: number
   foreground: string
   background: string
@@ -68,6 +75,7 @@ export type OverlayTranslationUnit = {
 
 export type TranslationPayload = {
   generation: number
+  frameId: string
   selection: SelectionRect | null
   capture: CaptureMetadata | null
   sourceLanguage: string
@@ -84,6 +92,7 @@ export type TranslationPayload = {
 
 export type TranslationPartialPayload = {
   generation: number
+  frameId: string
   selection: SelectionRect | null
   capture: CaptureMetadata | null
   sourceLanguage: string

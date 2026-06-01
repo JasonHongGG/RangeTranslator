@@ -85,9 +85,9 @@ class OllamaProvider:
 
             model = self._resolve_model(endpoint, str(payload.get("model") or "discovering"))
 
-            output_schema = prompt.get(
-                "outputSchema",
-                '{"detectedSource":"ja-JP","items":[{"id":"source-0","index":0,"translation":"translated text","confidence":0.96}]}',
+            output_schema = self._build_output_schema(
+                items,
+                prompt.get("outputSchema"),
             )
             all_items_json = json.dumps(items, ensure_ascii=False)
 
@@ -299,6 +299,9 @@ class OllamaProvider:
         expected = {
             (str(item["id"]), int(item["index"])): item for item in source_items
         }
+        expected_by_index = {
+            int(item["index"]): item for item in source_items
+        }
         expected_sequence = [
             (str(item["id"]), int(item["index"])) for item in source_items
         ]
@@ -319,9 +322,22 @@ class OllamaProvider:
             except (TypeError, ValueError) as error:
                 raise RuntimeError("AI provider item is missing a numeric index") from error
 
-            key = (item_id, normalized_index)
+            expected_item = expected_by_index.get(normalized_index)
+            if expected_item is None:
+                raise RuntimeError(
+                    f"AI provider returned unexpected item index: {normalized_index}"
+                )
+
+            resolved_item_id = self._resolve_returned_item_id(
+                item_id,
+                normalized_index,
+                expected_item,
+            )
+            key = (resolved_item_id, normalized_index)
             if key not in expected:
-                raise RuntimeError(f"AI provider returned unexpected item id/index: {key}")
+                raise RuntimeError(
+                    f"AI provider returned unexpected item id/index: {(item_id, normalized_index)}"
+                )
             if key in seen:
                 raise RuntimeError(f"AI provider returned duplicate item id/index: {key}")
             seen.add(key)
@@ -333,7 +349,7 @@ class OllamaProvider:
 
             translated_items.append(
                 {
-                    "id": item_id,
+                    "id": resolved_item_id,
                     "index": normalized_index,
                     "translation": translation.strip(),
                     "confidence": self._normalize_confidence(raw_item.get("confidence")),
@@ -350,6 +366,59 @@ class OllamaProvider:
         self._validate_translated_items(source_items, translated_items)
 
         return detected_source, translated_items
+
+    def _build_output_schema(
+        self,
+        source_items: list[dict[str, Any]],
+        schema_hint: Any,
+    ) -> str:
+        detected_source = "ja-JP"
+        if isinstance(schema_hint, str):
+            try:
+                parsed_hint = json.loads(schema_hint)
+            except json.JSONDecodeError:
+                parsed_hint = None
+            if isinstance(parsed_hint, dict):
+                raw_detected = parsed_hint.get("detectedSource") or parsed_hint.get("detected_source")
+                if isinstance(raw_detected, str) and raw_detected:
+                    detected_source = raw_detected
+
+        example_item = source_items[0] if source_items else {"id": "<preserve-input-id>", "index": 0}
+        return json.dumps(
+            {
+                "detectedSource": detected_source,
+                "items": [
+                    {
+                        "id": str(example_item.get("id") or "<preserve-input-id>"),
+                        "index": int(example_item.get("index") or 0),
+                        "translation": "translated text",
+                        "confidence": 0.96,
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+    def _resolve_returned_item_id(
+        self,
+        item_id: str,
+        normalized_index: int,
+        expected_item: dict[str, Any],
+    ) -> str:
+        expected_id = str(expected_item["id"])
+        if item_id == expected_id:
+            return expected_id
+
+        if self._is_legacy_index_alias(item_id, normalized_index):
+            return expected_id
+
+        return item_id
+
+    def _is_legacy_index_alias(self, item_id: str, normalized_index: int) -> bool:
+        if item_id in {f"source-{normalized_index}", f"span-{normalized_index}"}:
+            return True
+
+        return item_id.endswith(f"/span-{normalized_index}")
 
     def _validate_translated_items(
         self,

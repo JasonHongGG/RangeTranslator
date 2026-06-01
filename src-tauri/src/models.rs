@@ -108,15 +108,24 @@ pub enum TranslationUnitState {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct OverlayLogicalRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct OverlaySourceUnit {
     pub id: String,
+    pub frame_id: String,
     pub order: usize,
     pub source_text: String,
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
+    pub source_rect: PixelRect,
+    pub render_rect: OverlayLogicalRect,
     pub font_size: f32,
+    pub line_height: f32,
     pub confidence: f32,
     pub foreground: String,
     pub background: String,
@@ -138,6 +147,7 @@ pub struct OverlayTranslationUnit {
 #[serde(rename_all = "camelCase")]
 pub struct TranslationPayload {
     pub generation: u64,
+    pub frame_id: String,
     pub selection: Option<SelectionRect>,
     pub capture: Option<CaptureMetadata>,
     pub source_language: String,
@@ -156,6 +166,7 @@ impl Default for TranslationPayload {
     fn default() -> Self {
         Self {
             generation: 0,
+            frame_id: String::new(),
             selection: None,
             capture: None,
             source_language: "auto".to_string(),
@@ -176,6 +187,7 @@ impl Default for TranslationPayload {
 #[serde(rename_all = "camelCase")]
 pub struct TranslationPartialPayload {
     pub generation: u64,
+    pub frame_id: String,
     pub selection: Option<SelectionRect>,
     pub capture: Option<CaptureMetadata>,
     pub source_language: String,

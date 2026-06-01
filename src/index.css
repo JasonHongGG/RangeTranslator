@@ -799,29 +799,29 @@ svg {
 
 .overlay-backdrop {
   position: absolute;
-  border-radius: 8px;
-  backdrop-filter: blur(8px);
+  border-radius: 0;
   pointer-events: none;
+  z-index: 1;
 }
 
 .overlay-block {
   position: absolute;
-  border-radius: 8px;
-  padding: 6px 12px;
+  inset: auto;
+  border-radius: 0;
+  padding: 0;
   display: block;
-  font-family: var(--font-body);
-  line-height: 1.4;
+  font-family: 'Noto Sans TC', 'Microsoft JhengHei', 'PingFang TC', sans-serif;
+  line-height: 1;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  word-break: break-word;
   pointer-events: none;
-
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(8px);
+  overflow: hidden;
+  background: transparent;
   color: var(--ink-strong);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  font-size: 14px;
+  text-shadow: none;
   box-sizing: border-box;
+  z-index: 2;
 }
 
 .overlay-block-streaming {

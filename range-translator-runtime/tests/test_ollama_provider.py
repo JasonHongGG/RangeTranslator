@@ -16,20 +16,20 @@ PROMPT = {
     "id": "translation.ui_overlay.default",
     "system": "Return JSON only.",
     "userTemplate": "Items: {{all_items_json}} Schema: {{output_schema}}",
-    "outputSchema": '{"detectedSource":"ja-JP","items":[{"id":"source-0","index":0,"translation":"translated text","confidence":0.96}]}',
+    "outputSchema": '{"detectedSource":"ja-JP","items":[{"id":"<preserve-input-id>","index":0,"translation":"translated text","confidence":0.96}]}',
 }
 
 
 def source_items() -> list[dict[str, object]]:
     return [
         {
-            "id": "source-0",
+            "id": "7:1/span-0",
             "index": 0,
             "text": "Settings Layering Restored",
             "rect": {"x": 10, "y": 20, "width": 200, "height": 28},
         },
         {
-            "id": "source-1",
+            "id": "7:1/span-1",
             "index": 1,
             "text": "Synchronized Pinning",
             "rect": {"x": 10, "y": 56, "width": 180, "height": 28},
@@ -42,6 +42,38 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
         self.provider = OllamaProvider()
 
     def test_extracts_id_aligned_items(self) -> None:
+        raw = json.dumps(
+            {
+                "detectedSource": "en-US",
+                "items": [
+                    {
+                        "id": "7:1/span-0",
+                        "index": 0,
+                        "translation": "設定層級已恢復",
+                        "confidence": 0.9,
+                    },
+                    {
+                        "id": "7:1/span-1",
+                        "index": 1,
+                        "translation": "同步釘選",
+                        "confidence": 0.8,
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+        detected_source, items = self.provider._extract_translation_batch(
+            raw,
+            source_items(),
+            "auto",
+        )
+
+        self.assertEqual(detected_source, "en-US")
+        self.assertEqual([item["id"] for item in items], ["7:1/span-0", "7:1/span-1"])
+        self.assertEqual([item["translation"] for item in items], ["設定層級已恢復", "同步釘選"])
+
+    def test_accepts_legacy_source_id_alias_when_index_matches(self) -> None:
         raw = json.dumps(
             {
                 "detectedSource": "en-US",
@@ -70,8 +102,7 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
         )
 
         self.assertEqual(detected_source, "en-US")
-        self.assertEqual([item["id"] for item in items], ["source-0", "source-1"])
-        self.assertEqual([item["translation"] for item in items], ["設定層級已恢復", "同步釘選"])
+        self.assertEqual([item["id"] for item in items], ["7:1/span-0", "7:1/span-1"])
 
     def test_rejects_merged_output(self) -> None:
         raw = json.dumps(
@@ -102,7 +133,7 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
                         "confidence": 0.9,
                     },
                     {
-                        "id": "source-x",
+                        "id": "wrong-id",
                         "index": 1,
                         "translation": "同步釘選",
                         "confidence": 0.8,
@@ -120,13 +151,13 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
             {
                 "items": [
                     {
-                        "id": "source-1",
+                        "id": "7:1/span-1",
                         "index": 1,
                         "translation": "同步釘選",
                         "confidence": 0.8,
                     },
                     {
-                        "id": "source-0",
+                        "id": "7:1/span-0",
                         "index": 0,
                         "translation": "設定層級已恢復",
                         "confidence": 0.9,
@@ -143,8 +174,8 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
         raw = json.dumps(
             {
                 "items": [
-                    {"id": "source-0", "index": 0, "translation": "", "confidence": 0.3},
-                    {"id": "source-1", "index": 1, "translation": "同步釘選", "confidence": 0.8},
+                    {"id": "7:1/span-0", "index": 0, "translation": "", "confidence": 0.3},
+                    {"id": "7:1/span-1", "index": 1, "translation": "同步釘選", "confidence": 0.8},
                 ]
             },
             ensure_ascii=False,
@@ -159,13 +190,13 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
             {
                 "items": [
                     {
-                        "id": "source-0",
+                        "id": "7:1/span-0",
                         "index": 0,
                         "translation": "用來更新用來更新現有的變更規格",
                         "confidence": 0.4,
                     },
                     {
-                        "id": "source-1",
+                        "id": "7:1/span-1",
                         "index": 1,
                         "translation": "同步釘選",
                         "confidence": 0.8,
@@ -189,6 +220,12 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
 
         self.assertNotIn("設定層級已恢復；同步釘選", prompt)
         self.assertIn("Validation error", prompt)
+
+    def test_build_output_schema_uses_actual_first_item_id(self) -> None:
+        schema = self.provider._build_output_schema(source_items(), PROMPT["outputSchema"])
+
+        self.assertIn('"id": "7:1/span-0"', schema)
+        self.assertNotIn('"id": "source-0"', schema)
 
     def test_translate_repairs_invalid_first_response_once(self) -> None:
         class RepairingProvider(OllamaProvider):
