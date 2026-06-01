@@ -18,6 +18,8 @@ import { formatUnknown, writeLocalDebug } from '../app/debug'
 import {
   mergeTranslationPartial,
   mergeTranslationUpdate,
+  resolveOverlayTextMetrics,
+  resolveOverlayUnitRect,
   sameSelection,
   shouldIgnoreWindowDrag,
 } from '../app/overlay'
@@ -44,6 +46,11 @@ export function OverlayView() {
   const overlayBoundsSyncArmedRef = useRef(false)
   const isInteractive = snapshot.overlayMode !== 'passThrough'
   const allowsTextSelection = snapshot.overlayMode === 'selectText'
+  const geometrySelection = snapshot.selection ?? deferredTranslation.selection
+  const overlayViewport = {
+    width: Math.max(window.innerWidth, 1),
+    height: Math.max(window.innerHeight, 1),
+  }
 
   const syncSnapshot = useEffectEvent((next: RuntimeSnapshot) => {
     startTransition(() => {
@@ -272,35 +279,53 @@ export function OverlayView() {
       </div>
 
       {/* Pass 1: Background backdrops to obscure all original text */}
-      {deferredSourceUnits.map((block) => (
+      {deferredTranslation.visibleLayer !== 'none' && deferredSourceUnits.map((block) => {
+        const rect = resolveOverlayUnitRect(block, geometrySelection, overlayViewport, {
+          expandX: 1,
+          expandY: 1,
+        })
+
+        return (
         <div
           key={`bg-${block.id}`}
           className="overlay-backdrop"
           style={{
-            left: block.renderRect.x,
-            top: block.renderRect.y,
-            width: Math.max(1, block.renderRect.width),
-            height: Math.max(1, block.renderRect.height),
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
             background: block.background,
           }}
         />
-      ))}
+        )
+      })}
 
       {/* Pass 2: Translated text blocks */}
-      {deferredSourceUnits.map((block) => {
+      {deferredTranslation.visibleLayer !== 'none' && deferredSourceUnits.map((block) => {
         const translationUnit = translationBySourceId.get(block.id)
+        const translatedText = translationUnit?.text.trim() ?? ''
+        const hasTranslatedText = Boolean(
+          translationUnit &&
+            (translationUnit.state === 'translated' || translationUnit.streaming) &&
+            translatedText,
+        )
         const text =
           deferredTranslation.visibleLayer === 'ocr'
             ? block.sourceText
-            : translationUnit &&
-                (translationUnit.state === 'translated' || translationUnit.streaming) &&
-                translationUnit.text.trim()
-              ? translationUnit.text
-              : ''
+            : hasTranslatedText
+              ? translatedText
+              : block.sourceText
 
         if (!text) {
           return null
         }
+
+        const rect = resolveOverlayUnitRect(block, geometrySelection, overlayViewport)
+        const textMetrics = resolveOverlayTextMetrics(
+          block,
+          geometrySelection,
+          overlayViewport,
+        )
 
         return (
           <article
@@ -308,18 +333,31 @@ export function OverlayView() {
             className={`overlay-block overlay-block-${block.align} ${translationUnit?.streaming ? 'overlay-block-streaming' : ''}`}
             data-no-drag={allowsTextSelection ? 'true' : undefined}
             style={{
-              left: block.renderRect.x,
-              top: block.renderRect.y,
-              width: Math.max(1, block.renderRect.width),
-              height: Math.max(1, block.renderRect.height),
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
               color: block.foreground,
-              fontSize: Math.max(10, block.fontSize),
-              lineHeight: `${Math.max(block.fontSize, block.lineHeight)}px`,
+              fontSize: textMetrics.fontSize,
+              lineHeight: `${textMetrics.lineHeight}px`,
             }}
           >
             {text}
           </article>
-        );
+        )
+      })}
+
+      {/* Pass 3: OCR bounding boxes for geometry inspection */}
+      {deferredSourceUnits.map((block) => {
+        const rect = resolveOverlayUnitRect(block, geometrySelection, overlayViewport)
+
+        return (
+          <div
+            key={`ocr-box-${block.id}`}
+            className="overlay-ocr-box"
+            style={rect}
+          />
+        )
       })}
     </div>
   )

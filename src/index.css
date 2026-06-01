@@ -828,6 +828,16 @@ svg {
   opacity: 0.8;
 }
 
+.overlay-ocr-box {
+  position: absolute;
+  inset: auto;
+  border: 2px solid #ff2d20;
+  background: transparent;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 240;
+}
+
 .overlay-block-left {
   text-align: left;
 }

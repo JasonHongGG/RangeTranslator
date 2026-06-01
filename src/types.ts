@@ -42,20 +42,12 @@ export type CaptureMetadata = {
   scaleFactor: number
 }
 
-export type OverlayLogicalRect = {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
 export type OverlaySourceUnit = {
   id: string
   frameId: string
   order: number
   sourceText: string
   sourceRect: SelectionRect
-  renderRect: OverlayLogicalRect
   fontSize: number
   lineHeight: number
   confidence: number

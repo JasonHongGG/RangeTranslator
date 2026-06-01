@@ -108,22 +108,12 @@ pub enum TranslationUnitState {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct OverlayLogicalRect {
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-#[serde(rename_all = "camelCase")]
 pub struct OverlaySourceUnit {
     pub id: String,
     pub frame_id: String,
     pub order: usize,
     pub source_text: String,
     pub source_rect: PixelRect,
-    pub render_rect: OverlayLogicalRect,
     pub font_size: f32,
     pub line_height: f32,
     pub confidence: f32,

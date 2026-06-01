@@ -17,10 +17,9 @@ use crate::{
     capture::{FrameSignature, capture_region, estimate_colors},
     models::{
         AiTranslationDelta, AiTranslationRequest, AiTranslationResponse, AiTranslationSourceItem,
-        CaptureMetadata, OcrRecognitionLine, OcrRecognitionRequest, OverlayLogicalRect,
-        OverlaySourceUnit, OverlayTranslationUnit, PartialUpdateStage, PipelineSettings,
-        PixelRect, RuntimeStatus, SelectionRect, TextAlign, TranslationPartialPayload,
-        TranslationPayload,
+        CaptureMetadata, OcrRecognitionLine, OcrRecognitionRequest, OverlaySourceUnit,
+        OverlayTranslationUnit, PartialUpdateStage, PipelineSettings, PixelRect,
+        RuntimeStatus, SelectionRect, TextAlign, TranslationPartialPayload, TranslationPayload,
         TranslationUnitState, VisibleLayer,
     },
     sidecar::runtime_gateway,
@@ -609,8 +608,7 @@ fn build_source_unit(
 ) -> OverlaySourceUnit {
     let (foreground, background) = estimate_colors(&frame.image, &line.rect);
     let normalized_rect = normalize_rect_to_selection(&line.rect, frame, selection);
-    let render_rect = render_rect_from_selection_rect(&normalized_rect, frame.metadata.scale_factor);
-    let (font_size, line_height) = estimate_text_metrics(&render_rect, &line.text);
+    let (font_size, line_height) = estimate_text_metrics(&normalized_rect, &line.text);
 
     OverlaySourceUnit {
         id: format!("{frame_id}/span-{order}"),
@@ -623,7 +621,6 @@ fn build_source_unit(
             width: normalized_rect.width.max(1),
             height: normalized_rect.height.max(1),
         },
-        render_rect,
         font_size,
         line_height,
         confidence: line.confidence,
@@ -633,23 +630,14 @@ fn build_source_unit(
     }
 }
 
-fn render_rect_from_selection_rect(rect: &PixelRect, scale_factor: f32) -> OverlayLogicalRect {
-    let scale = scale_factor.max(1.0);
-
-    OverlayLogicalRect {
-        x: rect.x as f32 / scale,
-        y: rect.y as f32 / scale,
-        width: rect.width.max(1) as f32 / scale,
-        height: rect.height.max(1) as f32 / scale,
-    }
-}
-
-fn estimate_text_metrics(render_rect: &OverlayLogicalRect, text: &str) -> (f32, f32) {
+fn estimate_text_metrics(rect: &PixelRect, text: &str) -> (f32, f32) {
     let char_count = text.chars().count().max(1) as f32;
-    let height_bound = (render_rect.height * 0.82).clamp(10.0, 34.0);
-    let width_bound = ((render_rect.width / char_count).max(6.0) * 1.6).clamp(10.0, 34.0);
+    let rect_height = rect.height.max(1) as f32;
+    let rect_width = rect.width.max(1) as f32;
+    let height_bound = (rect_height * 0.82).clamp(10.0, 34.0);
+    let width_bound = ((rect_width / char_count).max(6.0) * 1.6).clamp(10.0, 34.0);
     let font_size = height_bound.min(width_bound).clamp(10.0, 34.0);
-    let line_height = (font_size * 1.12).min((render_rect.height * 1.04).max(font_size));
+    let line_height = (font_size * 1.12).min((rect_height * 1.04).max(font_size));
     (font_size, line_height)
 }
 
@@ -976,7 +964,7 @@ mod tests {
     }
 
     #[test]
-    fn source_units_normalize_capture_pixels_back_to_selection_space() {
+    fn source_units_normalize_capture_pixels_back_to_overlay_selection_space() {
         let frame = CapturedFrame {
             image: RgbaImage::from_pixel(720, 405, image::Rgba([24, 28, 32, 255])),
             metadata: CaptureMetadata {
@@ -1018,10 +1006,8 @@ mod tests {
         assert_eq!(units[0].source_rect.y, 40);
         assert_eq!(units[0].source_rect.width, 120);
         assert_eq!(units[0].source_rect.height, 30);
-        assert!((units[0].render_rect.x - 40.0).abs() < 0.001);
-        assert!((units[0].render_rect.y - 26.666666).abs() < 0.01);
-        assert!((units[0].render_rect.width - 80.0).abs() < 0.001);
-        assert!((units[0].render_rect.height - 20.0).abs() < 0.001);
+        assert!(units[0].font_size >= 10.0);
+        assert!(units[0].line_height >= units[0].font_size);
     }
 
     #[test]
