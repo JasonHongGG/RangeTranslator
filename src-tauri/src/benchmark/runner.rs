@@ -1,7 +1,10 @@
 use std::{sync::Arc, time::Instant};
 
 use crate::{
-    models::{AiTranslationRequest, BenchmarkCaseResult, BenchmarkReport},
+    models::{
+        AiTranslationRequest, AiTranslationSourceItem, BenchmarkCaseResult, BenchmarkReport,
+        PixelRect,
+    },
     sidecar::runtime_gateway,
 };
 
@@ -23,28 +26,58 @@ pub async fn run_default_prompt_benchmark(
             .prompt_profile
             .clone()
             .unwrap_or_else(|| prompt_profile.to_string());
+        let items = case
+            .items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| AiTranslationSourceItem {
+                id: item.id.clone(),
+                index,
+                text: item.text.clone(),
+                rect: PixelRect {
+                    x: 0,
+                    y: index as u32 * 24,
+                    width: item.text.chars().count().max(1) as u32 * 12,
+                    height: 24,
+                },
+            })
+            .collect::<Vec<_>>();
+        let expected_translations = case
+            .expected_items
+            .iter()
+            .map(|item| item.translation.clone())
+            .collect::<Vec<_>>();
 
         let started_at = Instant::now();
-        let response = runtime_gateway().translate(
-            AiTranslationRequest {
-                endpoint: endpoint.to_string(),
-                provider_id: provider_id.to_string(),
-                model: model.to_string(),
-                prompt_profile: case_prompt_profile.clone(),
-                source_language: case.source_language.clone(),
-                target_language: case.target_language.clone(),
-                texts: case.texts.clone(),
-            },
-            Arc::new(|_| {}),
-        )
-        .await
-        .map_err(|error| format!("benchmark case {} failed: {error}", case.id))?;
+        let response = runtime_gateway()
+            .translate(
+                AiTranslationRequest {
+                    endpoint: endpoint.to_string(),
+                    provider_id: provider_id.to_string(),
+                    model: model.to_string(),
+                    prompt_profile: case_prompt_profile.clone(),
+                    source_language: case.source_language.clone(),
+                    target_language: case.target_language.clone(),
+                    expected_item_count: items.len(),
+                    context_text: items
+                        .iter()
+                        .map(|item| item.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                    items,
+                },
+                Arc::new(|_| {}),
+            )
+            .await
+            .map_err(|error| format!("benchmark case {} failed: {error}", case.id))?;
 
         let latency_ms = started_at.elapsed().as_secs_f32() * 1000.0;
-        let exact_match_score = exact_match_score(
-            &case.expected_translations,
-            &response.translations,
-        );
+        let actual_translations = response
+            .items
+            .iter()
+            .map(|item| item.translation.clone())
+            .collect::<Vec<_>>();
+        let exact_match_score = exact_match_score(&expected_translations, &actual_translations);
 
         total_score += exact_match_score;
         total_latency_ms += latency_ms;
@@ -52,8 +85,8 @@ pub async fn run_default_prompt_benchmark(
             case_id: case.id.clone(),
             prompt_profile: case_prompt_profile,
             provider_id: response.provider_id.clone(),
-            expected_translations: case.expected_translations.clone(),
-            actual_translations: response.translations.clone(),
+            expected_translations,
+            actual_translations,
             exact_match_score,
             latency_ms,
         });

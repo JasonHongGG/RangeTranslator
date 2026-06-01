@@ -4,8 +4,8 @@ use chrono::{SecondsFormat, Utc};
 use parking_lot::Mutex;
 
 use crate::models::{
-    OverlayInteractionMode, PipelineSettings, RuntimeSnapshot, RuntimeStatus,
-    SelectionRect, TranslationPayload, VisibleLayer,
+    OverlayInteractionMode, PipelineSettings, RuntimeSnapshot, RuntimeStatus, SelectionRect,
+    TranslationPayload, VisibleLayer,
 };
 
 #[derive(Clone)]
@@ -178,8 +178,6 @@ impl SharedState {
         inner.snapshot.clone()
     }
 
-
-
     pub fn is_token_active(&self, token: u64) -> bool {
         let inner = self.inner.lock();
         inner.snapshot.running
@@ -276,7 +274,7 @@ impl SharedState {
                 inner.snapshot.status_detail = "No text detected".to_string();
             }
         }
-        inner.snapshot.block_count = payload.blocks.len();
+        inner.snapshot.block_count = payload.source_units.len();
         inner.snapshot.last_updated = payload.captured_at.clone();
         inner.snapshot.last_detected_source = payload.detected_source.clone();
         inner.snapshot.last_error = None;

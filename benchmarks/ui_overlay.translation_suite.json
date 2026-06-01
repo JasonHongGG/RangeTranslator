@@ -1,6 +1,6 @@
 {
   "id": "ui-overlay-translation-core",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "title": "UI Overlay Translation Prompt Benchmark",
   "cases": [
     {
@@ -8,8 +8,12 @@
       "description": "Simple Japanese desktop action label",
       "sourceLanguage": "ja-JP",
       "targetLanguage": "zh-TW",
-      "texts": ["スキャン開始"],
-      "expectedTranslations": ["開始掃描"],
+      "items": [
+        { "id": "source-0", "text": "スキャン開始" }
+      ],
+      "expectedItems": [
+        { "id": "source-0", "translation": "開始掃描" }
+      ],
       "promptProfile": "translation.ui_overlay.default"
     },
     {
@@ -17,8 +21,12 @@
       "description": "Loading status text",
       "sourceLanguage": "ja-JP",
       "targetLanguage": "zh-TW",
-      "texts": ["読み込み中"],
-      "expectedTranslations": ["載入中"],
+      "items": [
+        { "id": "source-0", "text": "読み込み中" }
+      ],
+      "expectedItems": [
+        { "id": "source-0", "translation": "載入中" }
+      ],
       "promptProfile": "translation.ui_overlay.default"
     },
     {
@@ -26,8 +34,31 @@
       "description": "Shortcut text should preserve hotkey semantics",
       "sourceLanguage": "en-US",
       "targetLanguage": "zh-TW",
-      "texts": ["Press Ctrl + S to save"],
-      "expectedTranslations": ["按下 Ctrl + S 以儲存"],
+      "items": [
+        { "id": "source-0", "text": "Press Ctrl + S to save" }
+      ],
+      "expectedItems": [
+        { "id": "source-0", "translation": "按下 Ctrl + S 以儲存" }
+      ],
+      "promptProfile": "translation.ui_overlay.default"
+    },
+    {
+      "id": "multi-line-merge-risk",
+      "description": "Multiple OCR lines must not be merged even when Traditional Chinese is shorter",
+      "sourceLanguage": "en-US",
+      "targetLanguage": "zh-TW",
+      "items": [
+        { "id": "source-0", "text": "Exquisite UI Redesign & Architecture Restoration" },
+        { "id": "source-1", "text": "I have completely overhauled the UI for RangeTranslator" },
+        { "id": "source-2", "text": "Settings Layering Restored" },
+        { "id": "source-3", "text": "Synchronized Pinning" }
+      ],
+      "expectedItems": [
+        { "id": "source-0", "translation": "精緻 UI 重新設計與架構修復" },
+        { "id": "source-1", "translation": "我已完整重構 RangeTranslator 的 UI" },
+        { "id": "source-2", "translation": "設定層級已恢復" },
+        { "id": "source-3", "translation": "同步釘選" }
+      ],
       "promptProfile": "translation.ui_overlay.default"
     }
   ]

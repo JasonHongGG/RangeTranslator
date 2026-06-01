@@ -33,7 +33,10 @@ pub enum RuntimeInvokeError {
     Unrecoverable(String),
 }
 
-pub fn decode_payload<T: DeserializeOwned>(value: Value, context: &str) -> Result<T, RuntimeInvokeError> {
+pub fn decode_payload<T: DeserializeOwned>(
+    value: Value,
+    context: &str,
+) -> Result<T, RuntimeInvokeError> {
     serde_json::from_value(value).map_err(|error| {
         RuntimeInvokeError::Recoverable(format!("failed to decode sidecar {context}: {error}"))
     })

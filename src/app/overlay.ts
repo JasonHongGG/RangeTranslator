@@ -1,6 +1,7 @@
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isTauri } from '../bridge'
 import type {
+  OverlayTranslationUnit,
   RuntimeStatus,
   SelectionRect,
   TranslationPartialPayload,
@@ -43,23 +44,46 @@ export function mergeTranslationPartial(
           visibleLayer: partial.visibleLayer,
           provider: partial.provider,
           promptProfile: partial.promptProfile,
-          blocks: [],
+          sourceUnits: [],
+          translationUnits: [],
         }
       : current
 
-  const order = new Map(baseline.blocks.map((block, index) => [block.id, index]))
-  const blockMap = new Map(baseline.blocks.map((block) => [block.id, block]))
+  const sourceOrder = new Map(
+    baseline.sourceUnits.map((unit, index) => [unit.id, unit.order ?? index]),
+  )
+  const sourceMap = new Map(baseline.sourceUnits.map((unit) => [unit.id, unit]))
 
-  for (const block of partial.blocks) {
-    const previous = blockMap.get(block.id)
-    blockMap.set(block.id, previous ? { ...previous, ...block } : block)
-    if (!order.has(block.id)) {
-      order.set(block.id, order.size)
+  for (const unit of partial.sourceUnits) {
+    const previous = sourceMap.get(unit.id)
+    sourceMap.set(unit.id, previous ? { ...previous, ...unit } : unit)
+    if (!sourceOrder.has(unit.id)) {
+      sourceOrder.set(unit.id, unit.order ?? sourceOrder.size)
     }
   }
 
-  const blocks = Array.from(blockMap.values()).sort(
-    (left, right) => (order.get(left.id) ?? 0) - (order.get(right.id) ?? 0),
+  const translationOrder = new Map(
+    baseline.translationUnits.map((unit, index) => [unit.sourceId, unit.order ?? index]),
+  )
+  const translationMap = new Map(
+    baseline.translationUnits.map((unit) => [unit.sourceId, unit]),
+  )
+
+  for (const unit of partial.translationUnits) {
+    const previous = translationMap.get(unit.sourceId)
+    translationMap.set(unit.sourceId, previous ? { ...previous, ...unit } : unit)
+    if (!translationOrder.has(unit.sourceId)) {
+      translationOrder.set(unit.sourceId, unit.order ?? translationOrder.size)
+    }
+  }
+
+  const sourceUnits = Array.from(sourceMap.values()).sort(
+    (left, right) => (sourceOrder.get(left.id) ?? 0) - (sourceOrder.get(right.id) ?? 0),
+  )
+  const translationUnits = Array.from(translationMap.values()).sort(
+    (left, right) =>
+      (translationOrder.get(left.sourceId) ?? 0) -
+      (translationOrder.get(right.sourceId) ?? 0),
   )
 
   return {
@@ -73,8 +97,62 @@ export function mergeTranslationPartial(
     visibleLayer: (partial.visibleLayer || baseline.visibleLayer) as VisibleLayer,
     provider: partial.provider || baseline.provider,
     promptProfile: partial.promptProfile || baseline.promptProfile,
-    blocks,
+    sourceUnits,
+    translationUnits,
   }
+}
+
+export function mergeTranslationUpdate(
+  current: TranslationPayload,
+  next: TranslationPayload,
+): TranslationPayload {
+  if (next.generation < current.generation) {
+    return current
+  }
+
+  if (next.generation > current.generation) {
+    return next
+  }
+
+  const sourceMap = new Map(current.sourceUnits.map((unit) => [unit.id, unit]))
+  for (const unit of next.sourceUnits) {
+    const previous = sourceMap.get(unit.id)
+    sourceMap.set(unit.id, previous ? { ...previous, ...unit } : unit)
+  }
+
+  const translationMap = new Map(
+    current.translationUnits.map((unit) => [unit.sourceId, unit]),
+  )
+  for (const unit of next.translationUnits) {
+    const previous = translationMap.get(unit.sourceId)
+    if (previous && shouldKeepExistingTranslation(previous, unit)) {
+      translationMap.set(unit.sourceId, previous)
+    } else {
+      translationMap.set(unit.sourceId, unit)
+    }
+  }
+
+  return {
+    ...next,
+    sourceUnits: Array.from(sourceMap.values()).sort((left, right) => left.order - right.order),
+    translationUnits: Array.from(translationMap.values()).sort(
+      (left, right) => left.order - right.order,
+    ),
+  }
+}
+
+function shouldKeepExistingTranslation(
+  previous: OverlayTranslationUnit | undefined,
+  next: OverlayTranslationUnit,
+) {
+  if (!previous) {
+    return false
+  }
+
+  const nextIsEmptyWaitingState =
+    (next.state === 'pending' || next.state === 'disabled') && !next.text.trim()
+  const previousHasTranslation = previous.state === 'translated' && previous.text.trim()
+  return Boolean(nextIsEmptyWaitingState && previousHasTranslation)
 }
 
 export function sameSelection(

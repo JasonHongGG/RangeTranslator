@@ -121,27 +121,19 @@ impl PersistentRuntimeTransport {
         })?;
 
         self.stdin.write_all(&serialized).map_err(|error| {
-            RuntimeInvokeError::Recoverable(format!(
-                "failed to write sidecar request: {error}"
-            ))
+            RuntimeInvokeError::Recoverable(format!("failed to write sidecar request: {error}"))
         })?;
         self.stdin.write_all(b"\n").map_err(|error| {
-            RuntimeInvokeError::Recoverable(format!(
-                "failed to finalize sidecar request: {error}"
-            ))
+            RuntimeInvokeError::Recoverable(format!("failed to finalize sidecar request: {error}"))
         })?;
         self.stdin.flush().map_err(|error| {
-            RuntimeInvokeError::Recoverable(format!(
-                "failed to flush sidecar request: {error}"
-            ))
+            RuntimeInvokeError::Recoverable(format!("failed to flush sidecar request: {error}"))
         })?;
 
         loop {
             let mut line = String::new();
             let bytes = self.stdout.read_line(&mut line).map_err(|error| {
-                RuntimeInvokeError::Recoverable(format!(
-                    "failed to read sidecar response: {error}"
-                ))
+                RuntimeInvokeError::Recoverable(format!("failed to read sidecar response: {error}"))
             })?;
 
             if bytes == 0 {
@@ -181,7 +173,9 @@ impl PersistentRuntimeTransport {
                 return decode_payload(result, "success payload");
             }
 
-            return Err(RuntimeInvokeError::Unrecoverable(format_worker_error(frame)));
+            return Err(RuntimeInvokeError::Unrecoverable(format_worker_error(
+                frame,
+            )));
         }
     }
 }

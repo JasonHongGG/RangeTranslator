@@ -19,8 +19,7 @@ pub struct ResolvedCommand {
 
 pub fn find_runtime_root() -> Result<PathBuf, String> {
     for root in candidate_runtime_roots() {
-        if root.join("pyproject.toml").exists() && root.join("range_translator_runtime").exists()
-        {
+        if root.join("pyproject.toml").exists() && root.join("range_translator_runtime").exists() {
             cleanup_unused_debug_runtime_copy(&root);
             return Ok(root);
         }
@@ -41,7 +40,10 @@ pub fn find_python_runtime(runtime_root: &PathBuf) -> Result<ResolvedCommand, St
         }
     }
 
-    let windows_candidate = runtime_root.join(".venv").join("Scripts").join("python.exe");
+    let windows_candidate = runtime_root
+        .join(".venv")
+        .join("Scripts")
+        .join("python.exe");
     if windows_candidate.exists() {
         return Ok(ResolvedCommand {
             program: windows_candidate.to_string_lossy().to_string(),

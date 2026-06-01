@@ -4,9 +4,15 @@ use serde_json::json;
 use tauri::{AppHandle, Manager, State};
 
 use crate::{
-    app::{events::{emit_debug, emit_snapshot, emit_translation}, pipeline, windows},
+    app::{
+        events::{emit_debug, emit_snapshot, emit_translation},
+        pipeline, windows,
+    },
     benchmark::run_default_prompt_benchmark,
-    models::{BenchmarkReport, OcrWarmupRequest, OverlayInteractionMode, PipelineSettings, RuntimeCapabilities, RuntimeSnapshot, SelectionRect, TranslationPayload},
+    models::{
+        BenchmarkReport, OcrWarmupRequest, OverlayInteractionMode, PipelineSettings,
+        RuntimeCapabilities, RuntimeSnapshot, SelectionRect, TranslationPayload,
+    },
     sidecar::runtime_gateway,
     state::SharedState,
 };
@@ -135,10 +141,7 @@ pub async fn open_selector_window(
 }
 
 #[tauri::command]
-pub fn close_selector_window(
-    app: AppHandle,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
+pub fn close_selector_window(app: AppHandle, state: State<'_, SharedState>) -> Result<(), String> {
     windows::close_selector_window(&app, state.inner_clone())
 }
 
@@ -194,7 +197,6 @@ pub async fn submit_selection(
 
     windows::hide_window(&app, "selector");
     windows::schedule_window_close(&app, "selector", 30);
-
 
     pipeline::begin_pipeline(&app, state.inner_clone(), settings);
 

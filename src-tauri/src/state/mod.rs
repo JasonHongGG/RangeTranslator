@@ -1,3 +1,3 @@
 mod shared;
 
-pub use shared::{timestamp, SharedState};
+pub use shared::{SharedState, timestamp};

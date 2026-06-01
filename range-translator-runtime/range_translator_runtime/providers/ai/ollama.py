@@ -54,28 +54,37 @@ class OllamaProvider:
         prompt: PromptPayload,
         emit_event: EventEmitter | None = None,
     ) -> dict[str, Any]:
-        texts = list(payload.get("texts") or [])
+        items = self._normalize_source_items(list(payload.get("items") or []))
+        expected_item_count = int(payload.get("expectedItemCount") or len(items))
         source_language = payload.get("sourceLanguage") or "auto"
         target_language = payload.get("targetLanguage") or "zh-TW"
         endpoint = str(payload.get("endpoint") or "http://127.0.0.1:11434").rstrip("/")
 
-        if not texts:
+        if expected_item_count != len(items):
+            raise RuntimeError(
+                f"AI request expected {expected_item_count} items but received {len(items)} source items"
+            )
+
+        if not items:
             return {
                 "providerId": self.id,
                 "model": str(payload.get("model") or "discovering"),
                 "promptProfile": prompt["id"],
                 "detectedSource": source_language,
-                "translations": [],
-                "confidences": [],
+                "items": [],
             }
 
         model = self._resolve_model(endpoint, str(payload.get("model") or "discovering"))
 
         output_schema = prompt.get(
             "outputSchema",
-            '{"detectedSource":"ja-JP","translations":[{"translation":"translated text","confidence":0.96}]}',
+            '{"detectedSource":"ja-JP","items":[{"id":"source-0","index":0,"translation":"translated text","confidence":0.96}]}',
         )
-        all_texts_json = json.dumps(texts, ensure_ascii=False)
+        all_items_json = json.dumps(items, ensure_ascii=False)
+        context_text = str(
+            payload.get("contextText")
+            or "\n".join(str(item["text"]) for item in items)
+        )
 
         rendered_prompt = render_template(
             prompt["userTemplate"],
@@ -86,13 +95,73 @@ class OllamaProvider:
                 "target_language_name": pretty_language(target_language),
                 "line_index": "0",
                 "line_number": "1",
-                "line_count": str(len(texts)),
-                "current_text_json": json.dumps(texts[0], ensure_ascii=False),
-                "all_texts_json": all_texts_json,
+                "line_count": str(len(items)),
+                "item_count": str(len(items)),
+                "expected_item_count": str(expected_item_count),
+                "current_text_json": json.dumps(items[0]["text"], ensure_ascii=False),
+                "all_items_json": all_items_json,
+                "context_text_json": json.dumps(context_text, ensure_ascii=False),
                 "output_schema": output_schema,
             },
         )
 
+        request_payload = self._build_chat_payload(model, prompt["system"], rendered_prompt)
+        content = self._chat_json(
+            endpoint,
+            request_payload,
+        )
+
+        try:
+            detected_source, translated_items = self._extract_translation_batch(
+                content,
+                items,
+                source_language,
+            )
+        except RuntimeError as error:
+            repair_prompt = self._render_repair_prompt(
+                items,
+                source_language,
+                target_language,
+                output_schema,
+                content,
+                str(error),
+            )
+            repaired_content = self._chat_json(
+                endpoint,
+                self._build_chat_payload(model, prompt["system"], repair_prompt),
+            )
+            detected_source, translated_items = self._extract_translation_batch(
+                repaired_content,
+                items,
+                source_language,
+            )
+
+        if emit_event is not None:
+            for index, item in enumerate(translated_items):
+                emit_event(
+                    "translation_partial",
+                    {
+                        "sourceId": item["id"],
+                        "index": item["index"],
+                        "providerId": self.id,
+                        "model": model,
+                        "promptProfile": prompt["id"],
+                        "detectedSource": detected_source,
+                        "translatedText": item["translation"],
+                        "confidence": item["confidence"],
+                        "done": index == len(translated_items) - 1,
+                    },
+                )
+
+        return {
+            "providerId": self.id,
+            "model": model,
+            "promptProfile": prompt["id"],
+            "detectedSource": detected_source,
+            "items": translated_items,
+        }
+
+    def _build_chat_payload(self, model: str, system_prompt: str, user_prompt: str) -> dict[str, Any]:
         request_payload = {
             "model": model,
             "stream": False,
@@ -101,11 +170,11 @@ class OllamaProvider:
             "messages": [
                 {
                     "role": "system",
-                    "content": prompt["system"],
+                    "content": system_prompt,
                 },
                 {
                     "role": "user",
-                    "content": rendered_prompt,
+                    "content": user_prompt,
                 },
             ],
             "options": {
@@ -115,42 +184,7 @@ class OllamaProvider:
         }
         if model.lower().startswith("qwen3"):
             request_payload["think"] = False
-
-        content = self._chat_json(
-            endpoint,
-            request_payload,
-        )
-
-        detected_source, translations, confidences = self._extract_translation_batch(
-            content,
-            texts,
-            source_language,
-        )
-
-        if emit_event is not None:
-            for index, translation in enumerate(translations):
-                emit_event(
-                    "translation_partial",
-                    {
-                        "index": index,
-                        "providerId": self.id,
-                        "model": model,
-                        "promptProfile": prompt["id"],
-                        "detectedSource": detected_source,
-                        "translatedText": translation,
-                        "confidence": confidences[index],
-                        "done": index == len(translations) - 1,
-                    },
-                )
-
-        return {
-            "providerId": self.id,
-            "model": model,
-            "promptProfile": prompt["id"],
-            "detectedSource": detected_source,
-            "translations": translations,
-            "confidences": confidences,
-        }
+        return request_payload
 
     def _resolve_model(self, endpoint: str, current_model: str) -> str:
         preferred = [
@@ -219,64 +253,137 @@ class OllamaProvider:
     def _extract_translation_batch(
         self,
         raw_content: str,
-        texts: list[str],
-        fallback_source: str,
-    ) -> tuple[str, list[str], list[float]]:
+        source_items: list[dict[str, Any]],
+        source_language_hint: str,
+    ) -> tuple[str, list[dict[str, Any]]]:
         envelope = self._extract_translation_envelope(raw_content)
         detected_source = str(
             envelope.get("detectedSource")
             or envelope.get("detected_source")
-            or fallback_source
+            or source_language_hint
         )
-        raw_translations = (
-            envelope.get("translations")
-            or envelope.get("items")
-            or envelope.get("lines")
-            or envelope.get("results")
-        )
+        raw_items = envelope.get("items")
+        if not isinstance(raw_items, list):
+            raise RuntimeError("AI provider did not return an items array")
 
-        if isinstance(raw_translations, list):
-            translations: list[str] = []
-            confidences: list[float] = []
-            for index, text in enumerate(texts):
-                item = raw_translations[index] if index < len(raw_translations) else None
-                translation, confidence = self._normalize_translation_item(item, text)
-                translations.append(translation)
-                confidences.append(confidence)
-            return detected_source, translations, confidences
-
-        if len(texts) == 1:
-            translation, confidence = self._normalize_translation_item(envelope, texts[0])
-            return detected_source, [translation], [confidence]
-
-        raise RuntimeError("AI provider did not return a translations array")
-
-    def _normalize_translation_item(
-        self,
-        item: Any,
-        fallback_text: str,
-    ) -> tuple[str, float]:
-        if isinstance(item, dict):
-            translation = (
-                item.get("translation")
-                or item.get("text")
-                or item.get("value")
-                or fallback_text
+        if len(raw_items) != len(source_items):
+            raise RuntimeError(
+                f"AI provider returned {len(raw_items)} items for {len(source_items)} source items"
             )
-            confidence = item.get("confidence")
-        elif item is None:
-            translation = fallback_text
-            confidence = None
-        else:
-            translation = item
-            confidence = None
 
+        expected = {
+            (str(item["id"]), int(item["index"])): item for item in source_items
+        }
+        expected_sequence = [
+            (str(item["id"]), int(item["index"])) for item in source_items
+        ]
+        returned_sequence: list[tuple[str, int]] = []
+        seen: set[tuple[str, int]] = set()
+        translated_items: list[dict[str, Any]] = []
+
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                raise RuntimeError("AI provider returned a non-object item")
+
+            item_id = raw_item.get("id")
+            index = raw_item.get("index")
+            if not isinstance(item_id, str) or item_id == "":
+                raise RuntimeError("AI provider item is missing id")
+            try:
+                normalized_index = int(index)
+            except (TypeError, ValueError) as error:
+                raise RuntimeError("AI provider item is missing a numeric index") from error
+
+            key = (item_id, normalized_index)
+            if key not in expected:
+                raise RuntimeError(f"AI provider returned unexpected item id/index: {key}")
+            if key in seen:
+                raise RuntimeError(f"AI provider returned duplicate item id/index: {key}")
+            seen.add(key)
+            returned_sequence.append(key)
+
+            translation = raw_item.get("translation")
+            if not isinstance(translation, str):
+                raise RuntimeError(f"AI provider item {item_id} is missing translation text")
+
+            translated_items.append(
+                {
+                    "id": item_id,
+                    "index": normalized_index,
+                    "translation": translation.strip(),
+                    "confidence": self._normalize_confidence(raw_item.get("confidence")),
+                }
+            )
+
+        missing = sorted(set(expected) - seen, key=lambda item: item[1])
+        if missing:
+            raise RuntimeError(f"AI provider omitted item id/index pairs: {missing}")
+
+        if returned_sequence != expected_sequence:
+            raise RuntimeError("AI provider returned items out of order")
+
+        return detected_source, translated_items
+
+    def _normalize_source_items(self, raw_items: list[Any]) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        seen: set[tuple[str, int]] = set()
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                raise RuntimeError("AI request item must be an object")
+            item_id = raw_item.get("id")
+            if not isinstance(item_id, str) or item_id == "":
+                raise RuntimeError("AI request item is missing id")
+            try:
+                index = int(raw_item.get("index"))
+            except (TypeError, ValueError) as error:
+                raise RuntimeError(f"AI request item {item_id} is missing numeric index") from error
+            if (item_id, index) in seen:
+                raise RuntimeError(f"AI request contains duplicate item id/index: {(item_id, index)}")
+            seen.add((item_id, index))
+            text = raw_item.get("text")
+            if not isinstance(text, str):
+                raise RuntimeError(f"AI request item {item_id} is missing text")
+            items.append(
+                {
+                    "id": item_id,
+                    "index": index,
+                    "text": text,
+                    "rect": raw_item.get("rect") or {},
+                }
+            )
+
+        items.sort(key=lambda item: item["index"])
+        return items
+
+    def _normalize_confidence(self, value: Any) -> float:
         try:
-            confidence_value = float(confidence if confidence is not None else 1.0)
+            confidence_value = float(value if value is not None else 1.0)
         except (TypeError, ValueError):
             confidence_value = 1.0
+        return max(0.0, min(confidence_value, 1.0))
 
-        return str(translation), max(0.0, min(confidence_value, 1.0))
+    def _render_repair_prompt(
+        self,
+        source_items: list[dict[str, Any]],
+        source_language: str,
+        target_language: str,
+        output_schema: str,
+        invalid_content: str,
+        validation_error: str,
+    ) -> str:
+        return (
+            "The previous response was invalid for a realtime OCR overlay translation. "
+            "Return JSON only and do not add commentary.\n"
+            f"Source language: {pretty_language(source_language)} ({source_language}).\n"
+            f"Target language: {pretty_language(target_language)} ({target_language}).\n"
+            f"Validation error: {validation_error}\n"
+            f"Expected source items JSON: {json.dumps(source_items, ensure_ascii=False)}\n"
+            f"Invalid previous response: {invalid_content}\n"
+            f"Required schema: {output_schema}\n"
+            "Rules: return exactly one item per source item; preserve every id and index exactly; "
+            "translate each item independently while using the whole list as context; never merge, split, "
+            "drop, reorder, or replace source ids."
+        )
 
     def _extract_translation_envelope(self, raw_content: str) -> dict[str, Any]:
         content = raw_content.strip()

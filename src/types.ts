@@ -13,6 +13,12 @@ export type VisibleLayer = 'none' | 'ocr' | 'translation'
 
 export type TextAlign = 'left' | 'center' | 'right'
 export type PartialUpdateStage = 'ocr' | 'translation' | 'complete'
+export type TranslationUnitState =
+  | 'pending'
+  | 'translated'
+  | 'missing'
+  | 'failed'
+  | 'disabled'
 
 export type SelectionRect = {
   x: number
@@ -21,10 +27,10 @@ export type SelectionRect = {
   height: number
 }
 
-export type OverlayBlock = {
+export type OverlaySourceUnit = {
   id: string
+  order: number
   sourceText: string
-  translatedText: string
   x: number
   y: number
   width: number
@@ -34,6 +40,14 @@ export type OverlayBlock = {
   foreground: string
   background: string
   align: TextAlign
+}
+
+export type OverlayTranslationUnit = {
+  sourceId: string
+  order: number
+  text: string
+  state: TranslationUnitState
+  confidence: number
   streaming: boolean
 }
 
@@ -48,7 +62,8 @@ export type TranslationPayload = {
   visibleLayer: VisibleLayer
   provider: string
   promptProfile: string
-  blocks: OverlayBlock[]
+  sourceUnits: OverlaySourceUnit[]
+  translationUnits: OverlayTranslationUnit[]
 }
 
 export type TranslationPartialPayload = {
@@ -63,7 +78,8 @@ export type TranslationPartialPayload = {
   promptProfile: string
   stage: PartialUpdateStage
   complete: boolean
-  blocks: OverlayBlock[]
+  sourceUnits: OverlaySourceUnit[]
+  translationUnits: OverlayTranslationUnit[]
 }
 
 export type ProviderDescriptor = {

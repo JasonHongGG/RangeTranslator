@@ -4,8 +4,8 @@ use std::time::Duration;
 use anyhow::Context;
 use serde_json::json;
 use tauri::{
-    AppHandle, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewUrl,
-    WebviewWindow, WebviewWindowBuilder,
+    AppHandle, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
 };
 
 use crate::{
@@ -95,10 +95,15 @@ pub async fn open_selector_window(app: &AppHandle, state: SharedState) -> Result
             if let Some(window) = app_handle.get_webview_window("selector") {
                 set_window_capture_protection(&window, content_protected)?;
                 window
-                    .set_position(Position::Physical(PhysicalPosition::new(window_x, window_y)))
+                    .set_position(Position::Physical(PhysicalPosition::new(
+                        window_x, window_y,
+                    )))
                     .map_err(|error| error.to_string())?;
                 window
-                    .set_size(Size::Physical(PhysicalSize::new(window_width, window_height)))
+                    .set_size(Size::Physical(PhysicalSize::new(
+                        window_width,
+                        window_height,
+                    )))
                     .map_err(|error| error.to_string())?;
                 window
                     .set_always_on_top(true)
@@ -186,10 +191,15 @@ pub async fn open_selector_window(app: &AppHandle, state: SharedState) -> Result
 
             set_window_capture_protection(&window, content_protected)?;
             window
-                .set_position(Position::Physical(PhysicalPosition::new(window_x, window_y)))
+                .set_position(Position::Physical(PhysicalPosition::new(
+                    window_x, window_y,
+                )))
                 .map_err(|error| error.to_string())?;
             window
-                .set_size(Size::Physical(PhysicalSize::new(window_width, window_height)))
+                .set_size(Size::Physical(PhysicalSize::new(
+                    window_width,
+                    window_height,
+                )))
                 .map_err(|error| error.to_string())?;
             window
                 .set_ignore_cursor_events(false)
@@ -287,7 +297,9 @@ pub async fn ensure_overlay_window(
                 window
                     .set_skip_taskbar(true)
                     .map_err(|error| error.to_string())?;
-                window.set_shadow(false).map_err(|error| error.to_string())?;
+                window
+                    .set_shadow(false)
+                    .map_err(|error| error.to_string())?;
                 window
                     .set_resizable(true)
                     .map_err(|error| error.to_string())?;
@@ -410,7 +422,8 @@ pub fn request_shutdown(app: &AppHandle, state: SharedState) {
 }
 
 pub fn selection_or_error(state: &SharedState) -> Result<SelectionRect, String> {
-    state.snapshot()
+    state
+        .snapshot()
         .selection
         .clone()
         .context("Select a region before starting")
@@ -428,7 +441,8 @@ pub async fn open_settings_window(app: &AppHandle, state: SharedState) -> Result
         let result: Result<(), String> = (|| {
             if let Some(window) = app_handle.get_webview_window("settings") {
                 let _ = window.set_always_on_top(is_pinned);
-                let _ = set_window_capture_protection(&window, !state.snapshot().debug_screenshot_mode);
+                let _ =
+                    set_window_capture_protection(&window, !state.snapshot().debug_screenshot_mode);
                 window.show().map_err(|error| error.to_string())?;
                 window.set_focus().map_err(|error| error.to_string())?;
                 return Ok(());

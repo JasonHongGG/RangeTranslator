@@ -13,8 +13,7 @@ use tauri::Manager;
 use app::{commands, events::emit_debug, windows};
 use state::SharedState;
 
-const DEFAULT_ENDPOINT: &str =
-    "https://lacresha-posological-steven.ngrok-free.dev";
+const DEFAULT_ENDPOINT: &str = "https://lacresha-posological-steven.ngrok-free.dev";
 const DEFAULT_MODEL: &str = "discovering";
 
 fn main() {

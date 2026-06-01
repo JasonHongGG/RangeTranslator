@@ -17,6 +17,7 @@ import {
 import { formatUnknown, writeLocalDebug } from '../app/debug'
 import {
   mergeTranslationPartial,
+  mergeTranslationUpdate,
   readWindowScale,
   sameSelection,
   shouldIgnoreWindowDrag,
@@ -34,7 +35,8 @@ export function OverlayView() {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
   const [translation, setTranslation] = useState<TranslationPayload>(PREVIEW_TRANSLATION)
   const [overlayScale, setOverlayScale] = useState(1)
-  const deferredBlocks = useDeferredValue(translation.blocks)
+  const deferredSourceUnits = useDeferredValue(translation.sourceUnits)
+  const deferredTranslationUnits = useDeferredValue(translation.translationUnits)
   const overlayWindow = useMemo(() => currentTauriWindow(), [])
   const boundsRef = useRef<SelectionRect | null>(PREVIEW_SNAPSHOT.selection)
   const overlayBoundsSyncArmedRef = useRef(false)
@@ -49,9 +51,7 @@ export function OverlayView() {
 
   const syncTranslation = useEffectEvent((next: TranslationPayload) => {
     startTransition(() => {
-      setTranslation((current) =>
-        next.generation >= current.generation ? next : current,
-      )
+      setTranslation((current) => mergeTranslationUpdate(current, next))
     })
   })
 
@@ -282,7 +282,7 @@ export function OverlayView() {
       </div>
 
       {/* Pass 1: Background backdrops to obscure all original text */}
-      {deferredBlocks.map((block) => (
+      {deferredSourceUnits.map((block) => (
         <div
           key={`bg-${block.id}`}
           className="overlay-backdrop"
@@ -297,18 +297,27 @@ export function OverlayView() {
       ))}
 
       {/* Pass 2: Translated text blocks */}
-      {deferredBlocks.map((block) => {
-        const isTranslatingOrDone = snapshot.status === 'translating' || snapshot.status === 'ready' || snapshot.status === 'idle';
-        const isLeftover = snapshot.aiTranslationEnabled && !block.translatedText && isTranslatingOrDone;
-        
-        if (isLeftover) {
-          return null;
+      {deferredSourceUnits.map((block) => {
+        const translationUnit = deferredTranslationUnits.find(
+          (unit) => unit.sourceId === block.id,
+        )
+        const text =
+          translation.visibleLayer === 'ocr'
+            ? block.sourceText
+            : translationUnit &&
+                (translationUnit.state === 'translated' || translationUnit.streaming) &&
+                translationUnit.text.trim()
+              ? translationUnit.text
+              : ''
+
+        if (!text) {
+          return null
         }
 
         return (
         <article
           key={block.id}
-          className={`overlay-block overlay-block-${block.align} ${block.streaming ? 'overlay-block-streaming' : ''}`}
+          className={`overlay-block overlay-block-${block.align} ${translationUnit?.streaming ? 'overlay-block-streaming' : ''}`}
           data-no-drag={allowsTextSelection ? 'true' : undefined}
           style={{
             left: toLogicalPixels(block.x, overlayScale) - 12,
@@ -320,7 +329,7 @@ export function OverlayView() {
             fontSize: Math.max(10, block.fontSize / Math.max(overlayScale, 1)),
           }}
         >
-          {block.translatedText || block.sourceText}
+          {text}
         </article>
         );
       })}

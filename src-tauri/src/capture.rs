@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use image::RgbaImage;
 use screenshots::Screen;
 
@@ -135,12 +135,8 @@ pub fn capture_region(selection: &SelectionRect) -> Result<CapturedFrame> {
         .capture_area(local_x, local_y, selection.width, selection.height)
         .map_err(|error| anyhow!(error.to_string()))?;
 
-    let image = RgbaImage::from_raw(
-        captured.width(),
-        captured.height(),
-        captured.into_raw(),
-    )
-    .context("failed to materialize the captured frame")?;
+    let image = RgbaImage::from_raw(captured.width(), captured.height(), captured.into_raw())
+        .context("failed to materialize the captured frame")?;
 
     Ok(CapturedFrame { image })
 }

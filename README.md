@@ -19,6 +19,12 @@ Core Rust modules:
 - `src-tauri/src/state/`: shared runtime snapshot and latest translation state
 - `src-tauri/src/models.rs`: provider-neutral runtime, OCR, AI, benchmark, and partial-update contracts
 
+The live overlay contract is source-anchored: OCR produces `sourceUnits` that own
+the original text positions, colors, and masking rectangles, while AI produces
+`translationUnits` keyed by `sourceId`. Translation output is never allowed to
+fall back to OCR text. If a model omits, merges, reorders, or mislabels an item,
+that item is marked missing/failed and the original screen text remains masked.
+
 Frontend modules:
 
 - `src/views/`: dedicated panel, selector, and overlay views
@@ -68,7 +74,7 @@ The current default suite is:
 
 - `benchmarks/ui_overlay.translation_suite.json`
 
-This suite is intended to support prompt research and provider comparison using repeatable OCR translation samples.
+This suite is intended to support prompt research and provider comparison using repeatable OCR translation samples. Cases use id-based source items so prompt changes are checked against the same per-OCR-region alignment rule used by the live overlay.
 
 ## Environment Overrides
 
@@ -132,7 +138,8 @@ The following issues already happened in this repo and should be treated as hard
 - Sidecar stdout is reserved for JSON-RPC frames only. `paddle.utils.run_check()` prints `Running verify PaddlePaddle program ...` to stdout, so provider-side GPU validation must capture that output instead of letting it leak into the transport and break response parsing.
 - Remote Ollama behind ngrok is not equivalent to a local `127.0.0.1` server. In this repo we verified that `/api/tags` can succeed while both `/api/chat` and `/api/generate` fail to emit even response headers for minutes. Client-side batching and `keep_alive` reduce avoidable overhead, but they do not fix a remote inference server or tunnel that is not actually returning generation responses. Keep the chat timeout configurable, fail with an explicit server-side inference warning, and debug the remote Ollama host itself when metadata works but generation never starts.
 - A successful `discovering` flow depends on the sidecar choosing the right model, not just any available model. We verified on this endpoint that Python `urllib` and the current structured prompt both work when the provider uses `qwen3:8b`, while the old discovery priority incorrectly preferred `mistral-small3.2:latest`. Keep realtime-safe models such as `qwen3:8b` at the front of the sidecar preference list.
-- When a remote Ollama endpoint stalls, do not hammer it every frame. This pipeline now enters a short AI retry cooldown while keeping OCR blocks visible and surfacing a concise warning in the runtime snapshot instead of spamming the same full traceback on every capture cycle.
+- When a remote Ollama endpoint stalls, do not hammer it every frame. This pipeline now enters a short AI retry cooldown while keeping original text masked and surfacing a concise warning in the runtime snapshot instead of spamming the same full traceback on every capture cycle.
+- Overlay translation must stay source-anchored. The AI provider may receive full context for quality, but its response must return exactly one item for every OCR source unit with the same `id` and `index`. Do not reintroduce position-only `translations[]` arrays or any fallback that copies OCR source text into translation output.
 - Frontend route resolution and view bootstrap must not assume `getCurrentWindow()` is always synchronously available during initial render. If that access throws before React mounts the view tree, the visible symptom is a blank white window with no panel UI.
 
 Run the frontend and Tauri app:

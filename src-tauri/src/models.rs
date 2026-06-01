@@ -73,12 +73,23 @@ pub struct PixelRect {
     pub height: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct OverlayBlock {
+pub enum TranslationUnitState {
+    #[default]
+    Pending,
+    Translated,
+    Missing,
+    Failed,
+    Disabled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlaySourceUnit {
     pub id: String,
+    pub order: usize,
     pub source_text: String,
-    pub translated_text: String,
     pub x: u32,
     pub y: u32,
     pub width: u32,
@@ -88,6 +99,16 @@ pub struct OverlayBlock {
     pub foreground: String,
     pub background: String,
     pub align: TextAlign,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayTranslationUnit {
+    pub source_id: String,
+    pub order: usize,
+    pub text: String,
+    pub state: TranslationUnitState,
+    pub confidence: f32,
     pub streaming: bool,
 }
 
@@ -104,7 +125,8 @@ pub struct TranslationPayload {
     pub visible_layer: VisibleLayer,
     pub provider: String,
     pub prompt_profile: String,
-    pub blocks: Vec<OverlayBlock>,
+    pub source_units: Vec<OverlaySourceUnit>,
+    pub translation_units: Vec<OverlayTranslationUnit>,
 }
 
 impl Default for TranslationPayload {
@@ -120,7 +142,8 @@ impl Default for TranslationPayload {
             visible_layer: VisibleLayer::None,
             provider: String::new(),
             prompt_profile: String::new(),
-            blocks: Vec::new(),
+            source_units: Vec::new(),
+            translation_units: Vec::new(),
         }
     }
 }
@@ -139,7 +162,8 @@ pub struct TranslationPartialPayload {
     pub prompt_profile: String,
     pub stage: PartialUpdateStage,
     pub complete: bool,
-    pub blocks: Vec<OverlayBlock>,
+    pub source_units: Vec<OverlaySourceUnit>,
+    pub translation_units: Vec<OverlayTranslationUnit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -182,7 +206,18 @@ pub struct AiTranslationRequest {
     pub prompt_profile: String,
     pub source_language: String,
     pub target_language: String,
-    pub texts: Vec<String>,
+    pub expected_item_count: usize,
+    pub context_text: String,
+    pub items: Vec<AiTranslationSourceItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiTranslationSourceItem {
+    pub id: String,
+    pub index: usize,
+    pub text: String,
+    pub rect: PixelRect,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -233,13 +268,22 @@ pub struct AiTranslationResponse {
     pub model: String,
     pub prompt_profile: String,
     pub detected_source: String,
-    pub translations: Vec<String>,
-    pub confidences: Vec<f32>,
+    pub items: Vec<AiTranslationItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiTranslationItem {
+    pub id: String,
+    pub index: usize,
+    pub translation: String,
+    pub confidence: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AiTranslationDelta {
+    pub source_id: String,
     pub index: usize,
     pub provider_id: String,
     pub model: String,
@@ -257,9 +301,23 @@ pub struct BenchmarkCase {
     pub description: String,
     pub source_language: String,
     pub target_language: String,
-    pub texts: Vec<String>,
-    pub expected_translations: Vec<String>,
+    pub items: Vec<BenchmarkTextItem>,
+    pub expected_items: Vec<BenchmarkExpectedItem>,
     pub prompt_profile: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BenchmarkTextItem {
+    pub id: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BenchmarkExpectedItem {
+    pub id: String,
+    pub translation: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
