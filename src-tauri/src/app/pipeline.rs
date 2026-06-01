@@ -1,32 +1,35 @@
 use std::{
-    collections::HashMap,
     io::Cursor,
-    sync::{Arc, OnceLock},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use image::{DynamicImage, ImageFormat};
-use parking_lot::Mutex;
 use serde_json::json;
 use tauri::AppHandle;
 
 use crate::{
     app::events::{emit_debug, emit_snapshot, emit_translation, emit_translation_partial},
-    capture::{FrameSignature, capture_region, estimate_colors},
+    capture::{FrameSignature, capture_region},
+    domain::{
+        overlay_frame::{OverlayFrameContext, OverlayFrameScene},
+        scene::{SceneBuilder, SourceSpan, canonicalize_ocr_lines},
+        translation::{
+            align_translation_units, build_translation_cache_key, build_translation_units,
+            translation_cache, translation_unit_from_delta,
+        },
+    },
     models::{
-        AiTranslationDelta, AiTranslationRequest, AiTranslationResponse, AiTranslationSourceItem,
-        CaptureMetadata, OcrRecognitionLine, OcrRecognitionRequest, OverlaySourceUnit,
-        OverlayTranslationUnit, PartialUpdateStage, PipelineSettings, PixelRect,
-        RuntimeStatus, SelectionRect, TextAlign, TranslationPartialPayload, TranslationPayload,
-        TranslationUnitState, VisibleLayer,
+        AiTranslationDelta, AiTranslationRequest, AiTranslationSourceItem,
+        OcrRecognitionRequest, OverlaySourceUnit, PartialUpdateStage, PipelineSettings,
+        RuntimeStatus, TranslationUnitState, VisibleLayer,
     },
     sidecar::runtime_gateway,
     state::{self, SharedState},
 };
 
-static TRANSLATION_CACHE: OnceLock<Mutex<HashMap<String, AiTranslationResponse>>> = OnceLock::new();
 const AI_RETRY_COOLDOWN: Duration = Duration::from_secs(15);
 const FRAME_IDLE_POLL_DELAY: Duration = Duration::from_millis(180);
 const FRAME_CHANGE_CONFIRM_DELAY: Duration = Duration::from_millis(90);
@@ -135,9 +138,11 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             );
         }
 
-        let source_units = build_source_units(&frame, &canonical_lines, &selection, &frame_id);
+        let source_spans = SceneBuilder::new(&frame, &selection, &frame_id)
+            .build_source_spans(&canonical_lines);
+        let source_units = overlay_source_units(&source_spans);
         let pending_translation_units = build_translation_units(
-            &source_units,
+            &source_spans,
             if snapshot.ai_translation_enabled {
                 TranslationUnitState::Pending
             } else {
@@ -147,6 +152,22 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         );
 
         let capture_metadata = frame.metadata.clone();
+        let base_context = OverlayFrameContext::new(
+            token,
+            frame_id.clone(),
+            selection.clone(),
+            Some(capture_metadata.clone()),
+            snapshot.source_language.clone(),
+            snapshot.target_language.clone(),
+            Some(recognized.language.clone()),
+            Some(captured_at.clone()),
+            if snapshot.ai_translation_enabled {
+                snapshot.ai_provider.clone()
+            } else {
+                recognized.provider_id.clone()
+            },
+            snapshot.prompt_profile.clone(),
+        );
 
         let provider_snapshot = state.set_provider_stack(
             recognized.provider_id.clone(),
@@ -160,25 +181,13 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         }
 
         if source_units.is_empty() {
-            emit_overlay_payload(
-                &app,
-                &state,
-                token,
-                &frame_id,
-                &selection,
-                Some(capture_metadata.clone()),
-                &snapshot.source_language,
-                &snapshot.target_language,
-                Some(recognized.language.clone()),
-                Some(captured_at.clone()),
-                recognized.provider_id.clone(),
-                snapshot.prompt_profile.clone(),
+            let empty_scene = OverlayFrameScene::new(
+                base_context.clone(),
                 Vec::new(),
                 Vec::new(),
                 VisibleLayer::None,
-                PartialUpdateStage::Ocr,
-                false,
             );
+            emit_overlay_frame(&app, &state, &empty_scene, PartialUpdateStage::Ocr, false);
             tokio::time::sleep(FRAME_IDLE_POLL_DELAY).await;
             continue;
         }
@@ -186,22 +195,16 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         if let Some(retry_after) = ai_retry_after {
             let now = Instant::now();
             if now < retry_after {
-                emit_overlay_payload(
+                let retry_scene = OverlayFrameScene::new(
+                    base_context.clone(),
+                    source_units.clone(),
+                    build_translation_units(&source_spans, TranslationUnitState::Failed, false),
+                    VisibleLayer::Translation,
+                );
+                emit_overlay_frame(
                     &app,
                     &state,
-                    token,
-                    &frame_id,
-                    &selection,
-                    Some(capture_metadata.clone()),
-                    &snapshot.source_language,
-                    &snapshot.target_language,
-                    Some(recognized.language.clone()),
-                    Some(captured_at.clone()),
-                    snapshot.ai_provider.clone(),
-                    snapshot.prompt_profile.clone(),
-                    source_units.clone(),
-                    build_translation_units(&source_units, TranslationUnitState::Failed, false),
-                    VisibleLayer::Translation,
+                    &retry_scene,
                     PartialUpdateStage::Translation,
                     false,
                 );
@@ -222,23 +225,8 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             ai_error_summary = None;
         }
 
-        emit_overlay_payload(
-            &app,
-            &state,
-            token,
-            &frame_id,
-            &selection,
-            Some(capture_metadata.clone()),
-            &snapshot.source_language,
-            &snapshot.target_language,
-            Some(recognized.language.clone()),
-            Some(captured_at.clone()),
-            if snapshot.ai_translation_enabled {
-                snapshot.ai_provider.clone()
-            } else {
-                recognized.provider_id.clone()
-            },
-            snapshot.prompt_profile.clone(),
+        let pending_scene = OverlayFrameScene::new(
+            base_context.clone(),
             source_units.clone(),
             pending_translation_units.clone(),
             if snapshot.ai_translation_enabled {
@@ -246,9 +234,8 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             } else {
                 VisibleLayer::Ocr
             },
-            PartialUpdateStage::Ocr,
-            false,
         );
+        emit_overlay_frame(&app, &state, &pending_scene, PartialUpdateStage::Ocr, false);
 
         if !state.is_token_active(token) {
             break;
@@ -272,11 +259,8 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             })
             .collect::<Vec<_>>();
         let app_handle = app.clone();
-        let selection_for_partial = selection.clone();
-        let capture_for_partial = capture_metadata.clone();
-        let frame_id_for_partial = frame_id.clone();
-        let source_language_for_partial = snapshot.source_language.clone();
-        let target_language_for_partial = snapshot.target_language.clone();
+        let partial_context = base_context.clone();
+        let source_spans_for_partial = source_spans.clone();
         let source_units_for_partial = source_units.clone();
         let state_for_partial = state.clone();
         let partial_handler = Arc::new(move |delta: AiTranslationDelta| {
@@ -284,44 +268,24 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                 return;
             }
 
-            if let Some(source_unit) = source_units_for_partial
-                .iter()
-                .find(|unit| unit.id == delta.source_id && unit.order == delta.index)
-                .cloned()
+            if let Some(translation_unit) =
+                translation_unit_from_delta(&source_spans_for_partial, &delta)
             {
-                let translation_unit = OverlayTranslationUnit {
-                    source_id: source_unit.id,
-                    order: source_unit.order,
-                    text: delta.translated_text.clone(),
-                    state: if delta.translated_text.trim().is_empty() {
-                        TranslationUnitState::Missing
-                    } else {
-                        TranslationUnitState::Translated
-                    },
-                    confidence: (source_unit.confidence * delta.confidence.unwrap_or(1.0))
-                        .clamp(0.0, 1.0),
-                    streaming: !delta.done,
-                };
-
-                emit_translation_partial(
-                    &app_handle,
-                    &TranslationPartialPayload {
-                        generation: token,
-                        frame_id: frame_id_for_partial.clone(),
-                        selection: Some(selection_for_partial.clone()),
-                        capture: Some(capture_for_partial.clone()),
-                        source_language: source_language_for_partial.clone(),
-                        target_language: target_language_for_partial.clone(),
+                let partial_scene = OverlayFrameScene::new(
+                    OverlayFrameContext {
                         detected_source: delta.detected_source.clone(),
                         captured_at: Some(state::timestamp()),
-                        visible_layer: VisibleLayer::Translation,
                         provider: delta.provider_id.clone(),
                         prompt_profile: delta.prompt_profile.clone(),
-                        stage: PartialUpdateStage::Translation,
-                        complete: delta.done,
-                        source_units: source_units_for_partial.clone(),
-                        translation_units: vec![translation_unit],
+                        ..partial_context.clone()
                     },
+                    source_units_for_partial.clone(),
+                    vec![translation_unit],
+                    VisibleLayer::Translation,
+                );
+                emit_translation_partial(
+                    &app_handle,
+                    &partial_scene.partial(PartialUpdateStage::Translation, delta.done),
                 );
             }
         });
@@ -378,22 +342,19 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                     );
                     ai_retry_after = Some(Instant::now() + AI_RETRY_COOLDOWN);
                     ai_error_summary = Some(error_summary.clone());
-                    emit_overlay_payload(
+                    let failed_scene = OverlayFrameScene::new(
+                        OverlayFrameContext {
+                            provider: recognized.provider_id.clone(),
+                            ..base_context.clone()
+                        },
+                        source_units.clone(),
+                        build_translation_units(&source_spans, TranslationUnitState::Failed, false),
+                        VisibleLayer::Translation,
+                    );
+                    emit_overlay_frame(
                         &app,
                         &state,
-                        token,
-                        &frame_id,
-                        &selection,
-                        Some(capture_metadata.clone()),
-                        &snapshot.source_language,
-                        &snapshot.target_language,
-                        Some(recognized.language.clone()),
-                        Some(captured_at.clone()),
-                        recognized.provider_id.clone(),
-                        snapshot.prompt_profile.clone(),
-                        source_units.clone(),
-                        build_translation_units(&source_units, TranslationUnitState::Failed, false),
-                        VisibleLayer::Translation,
+                        &failed_scene,
                         PartialUpdateStage::Translation,
                         false,
                     );
@@ -422,49 +383,24 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         let model_snapshot = state.set_model(translation.model.clone());
         emit_snapshot(&app, &model_snapshot);
 
-        let translation_units = align_translation_units(&source_units, &translation);
-
-        let payload = TranslationPayload {
-            generation: token,
-            frame_id: frame_id.clone(),
-            selection: Some(selection.clone()),
-            capture: Some(capture_metadata.clone()),
-            source_language: snapshot.source_language.clone(),
-            target_language: snapshot.target_language.clone(),
-            detected_source: Some(translation.detected_source),
-            captured_at: Some(captured_at),
-            unchanged: false,
-            visible_layer: VisibleLayer::Translation,
-            provider: translation.provider_id,
-            prompt_profile: translation.prompt_profile,
-            source_units: source_units.clone(),
-            translation_units,
-        };
-
-        emit_translation_partial(
-            &app,
-            &TranslationPartialPayload {
-                generation: token,
-                frame_id,
-                selection: payload.selection.clone(),
-                capture: payload.capture.clone(),
-                source_language: payload.source_language.clone(),
-                target_language: payload.target_language.clone(),
-                detected_source: payload.detected_source.clone(),
-                captured_at: payload.captured_at.clone(),
-                visible_layer: VisibleLayer::Translation,
-                provider: payload.provider.clone(),
-                prompt_profile: payload.prompt_profile.clone(),
-                stage: PartialUpdateStage::Complete,
-                complete: true,
-                source_units: payload.source_units.clone(),
-                translation_units: payload.translation_units.clone(),
+        let translated_scene = OverlayFrameScene::new(
+            OverlayFrameContext {
+                detected_source: Some(translation.detected_source.clone()),
+                provider: translation.provider_id.clone(),
+                prompt_profile: translation.prompt_profile.clone(),
+                ..base_context.clone()
             },
+            source_units.clone(),
+            align_translation_units(&source_spans, &translation),
+            VisibleLayer::Translation,
         );
-
-        let snapshot = state.set_translation(payload.clone());
-        emit_snapshot(&app, &snapshot);
-        emit_translation(&app, &payload);
+        emit_overlay_frame(
+            &app,
+            &state,
+            &translated_scene,
+            PartialUpdateStage::Complete,
+            true,
+        );
 
         tokio::time::sleep(FRAME_IDLE_POLL_DELAY).await;
     }
@@ -472,326 +408,29 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
     Ok(())
 }
 
-fn build_source_units(
-    frame: &crate::capture::CapturedFrame,
-    lines: &[OcrRecognitionLine],
-    selection: &SelectionRect,
-    frame_id: &str,
-) -> Vec<OverlaySourceUnit> {
-    let mut ordered_lines = lines.iter().collect::<Vec<_>>();
-    ordered_lines.sort_by_key(|line| (line.rect.y, line.rect.x));
-
-    ordered_lines
-        .into_iter()
-        .enumerate()
-        .map(|(order, line)| build_source_unit(frame, line, order, selection, frame_id))
+fn overlay_source_units(source_spans: &[SourceSpan]) -> Vec<OverlaySourceUnit> {
+    source_spans
+        .iter()
+        .map(SourceSpan::as_overlay_unit)
         .collect()
 }
 
-fn canonicalize_ocr_lines(lines: &[OcrRecognitionLine]) -> Vec<OcrRecognitionLine> {
-    let mut canonical = Vec::new();
-
-    for line in lines {
-        let normalized_text = normalize_ocr_text(&line.text);
-        if normalized_text.is_empty() {
-            continue;
-        }
-
-        if let Some(existing) = canonical
-            .iter_mut()
-            .find(|existing| should_merge_ocr_line(existing, line))
-        {
-            existing.rect = merge_pixel_rect(&existing.rect, &line.rect);
-            existing.confidence = existing.confidence.max(line.confidence);
-            if line.text.chars().count() > existing.text.chars().count() {
-                existing.text = line.text.clone();
-            }
-            continue;
-        }
-
-        canonical.push(line.clone());
-    }
-
-    canonical
-}
-
-fn normalize_ocr_text(value: &str) -> String {
-    value
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .trim()
-        .to_lowercase()
-}
-
-fn should_merge_ocr_line(left: &OcrRecognitionLine, right: &OcrRecognitionLine) -> bool {
-    normalize_ocr_text(&left.text) == normalize_ocr_text(&right.text)
-        && rects_refer_to_same_region(&left.rect, &right.rect)
-}
-
-fn rects_refer_to_same_region(left: &PixelRect, right: &PixelRect) -> bool {
-    let intersection = rect_intersection_area(left, right) as f32;
-    if intersection <= 0.0 {
-        return false;
-    }
-
-    let smaller_area = (left.width * left.height).min(right.width * right.height) as f32;
-    let overlap_over_smaller = intersection / smaller_area.max(1.0);
-
-    rect_iou(left, right) >= 0.72
-        || overlap_over_smaller >= 0.9
-        || (overlap_over_smaller >= 0.78 && rect_centers_are_close(left, right))
-}
-
-fn rect_centers_are_close(left: &PixelRect, right: &PixelRect) -> bool {
-    let left_center_x = left.x as f32 + left.width as f32 / 2.0;
-    let left_center_y = left.y as f32 + left.height as f32 / 2.0;
-    let right_center_x = right.x as f32 + right.width as f32 / 2.0;
-    let right_center_y = right.y as f32 + right.height as f32 / 2.0;
-
-    let allowed_dx = left.width.min(right.width) as f32 * 0.18;
-    let allowed_dy = left.height.min(right.height) as f32 * 0.22;
-
-    (left_center_x - right_center_x).abs() <= allowed_dx.max(1.0)
-        && (left_center_y - right_center_y).abs() <= allowed_dy.max(1.0)
-}
-
-fn rect_intersection_area(left: &PixelRect, right: &PixelRect) -> u32 {
-    let x0 = left.x.max(right.x);
-    let y0 = left.y.max(right.y);
-    let x1 = (left.x + left.width).min(right.x + right.width);
-    let y1 = (left.y + left.height).min(right.y + right.height);
-
-    if x1 <= x0 || y1 <= y0 {
-        return 0;
-    }
-
-    (x1 - x0) * (y1 - y0)
-}
-
-fn rect_iou(left: &PixelRect, right: &PixelRect) -> f32 {
-    let intersection = rect_intersection_area(left, right) as f32;
-    if intersection == 0.0 {
-        return 0.0;
-    }
-
-    let left_area = (left.width * left.height) as f32;
-    let right_area = (right.width * right.height) as f32;
-    let union = left_area + right_area - intersection;
-    if union <= 0.0 {
-        return 0.0;
-    }
-
-    intersection / union
-}
-
-fn merge_pixel_rect(left: &PixelRect, right: &PixelRect) -> PixelRect {
-    let x = left.x.min(right.x);
-    let y = left.y.min(right.y);
-    let right_edge = (left.x + left.width).max(right.x + right.width);
-    let bottom_edge = (left.y + left.height).max(right.y + right.height);
-
-    PixelRect {
-        x,
-        y,
-        width: (right_edge - x).max(1),
-        height: (bottom_edge - y).max(1),
-    }
-}
-
-fn build_source_unit(
-    frame: &crate::capture::CapturedFrame,
-    line: &OcrRecognitionLine,
-    order: usize,
-    selection: &SelectionRect,
-    frame_id: &str,
-) -> OverlaySourceUnit {
-    let (foreground, background) = estimate_colors(&frame.image, &line.rect);
-    let normalized_rect = normalize_rect_to_selection(&line.rect, frame, selection);
-    let (font_size, line_height) = estimate_text_metrics(&normalized_rect, &line.text);
-
-    OverlaySourceUnit {
-        id: format!("{frame_id}/span-{order}"),
-        frame_id: frame_id.to_string(),
-        order,
-        source_text: line.text.clone(),
-        source_rect: PixelRect {
-            x: normalized_rect.x,
-            y: normalized_rect.y,
-            width: normalized_rect.width.max(1),
-            height: normalized_rect.height.max(1),
-        },
-        font_size,
-        line_height,
-        confidence: line.confidence,
-        foreground,
-        background,
-        align: TextAlign::Left,
-    }
-}
-
-fn estimate_text_metrics(rect: &PixelRect, text: &str) -> (f32, f32) {
-    let char_count = text.chars().count().max(1) as f32;
-    let rect_height = rect.height.max(1) as f32;
-    let rect_width = rect.width.max(1) as f32;
-    let height_bound = (rect_height * 0.82).clamp(10.0, 34.0);
-    let width_bound = ((rect_width / char_count).max(6.0) * 1.6).clamp(10.0, 34.0);
-    let font_size = height_bound.min(width_bound).clamp(10.0, 34.0);
-    let line_height = (font_size * 1.12).min((rect_height * 1.04).max(font_size));
-    (font_size, line_height)
-}
-
-fn normalize_rect_to_selection(
-    rect: &PixelRect,
-    frame: &crate::capture::CapturedFrame,
-    selection: &SelectionRect,
-) -> PixelRect {
-    let frame_width = frame.metadata.capture_width.max(1) as f32;
-    let frame_height = frame.metadata.capture_height.max(1) as f32;
-    let selection_width = selection.width.max(1) as f32;
-    let selection_height = selection.height.max(1) as f32;
-
-    let left = ((rect.x as f32 / frame_width) * selection_width).round();
-    let top = ((rect.y as f32 / frame_height) * selection_height).round();
-    let right = ((((rect.x + rect.width) as f32) / frame_width) * selection_width).round();
-    let bottom = ((((rect.y + rect.height) as f32) / frame_height) * selection_height).round();
-
-    PixelRect {
-        x: left.max(0.0) as u32,
-        y: top.max(0.0) as u32,
-        width: (right - left).max(1.0) as u32,
-        height: (bottom - top).max(1.0) as u32,
-    }
-}
-
-fn build_translation_units(
-    source_units: &[OverlaySourceUnit],
-    state: TranslationUnitState,
-    streaming: bool,
-) -> Vec<OverlayTranslationUnit> {
-    source_units
-        .iter()
-        .map(|unit| OverlayTranslationUnit {
-            source_id: unit.id.clone(),
-            order: unit.order,
-            text: String::new(),
-            state,
-            confidence: unit.confidence,
-            streaming,
-        })
-        .collect()
-}
-
-fn align_translation_units(
-    source_units: &[OverlaySourceUnit],
-    translation: &AiTranslationResponse,
-) -> Vec<OverlayTranslationUnit> {
-    let translated_by_source = translation
-        .items
-        .iter()
-        .map(|item| ((item.id.as_str(), item.index), item))
-        .collect::<HashMap<_, _>>();
-
-    source_units
-        .iter()
-        .map(|unit| {
-            if let Some(item) = translated_by_source.get(&(unit.id.as_str(), unit.order)) {
-                let text = item.translation.trim().to_string();
-                return OverlayTranslationUnit {
-                    source_id: unit.id.clone(),
-                    order: unit.order,
-                    text,
-                    state: if item.translation.trim().is_empty() {
-                        TranslationUnitState::Missing
-                    } else {
-                        TranslationUnitState::Translated
-                    },
-                    confidence: (unit.confidence * item.confidence).clamp(0.0, 1.0),
-                    streaming: false,
-                };
-            }
-
-            OverlayTranslationUnit {
-                source_id: unit.id.clone(),
-                order: unit.order,
-                text: String::new(),
-                state: TranslationUnitState::Missing,
-                confidence: unit.confidence,
-                streaming: false,
-            }
-        })
-        .collect()
-}
-
-fn emit_overlay_payload(
+fn emit_overlay_frame(
     app: &AppHandle,
     state: &SharedState,
-    generation: u64,
-    frame_id: &str,
-    selection: &crate::models::SelectionRect,
-    capture: Option<CaptureMetadata>,
-    source_language: &str,
-    target_language: &str,
-    detected_source: Option<String>,
-    captured_at: Option<String>,
-    provider: String,
-    prompt_profile: String,
-    source_units: Vec<OverlaySourceUnit>,
-    translation_units: Vec<OverlayTranslationUnit>,
-    visible_layer: VisibleLayer,
+    frame_scene: &OverlayFrameScene,
     stage: PartialUpdateStage,
     complete: bool,
 ) {
-    if !state.is_token_active(generation) {
+    let payload = frame_scene.payload();
+    if !state.is_token_active(payload.generation) {
         return;
     }
-
-    let visible_layer = if source_units.is_empty() {
-        VisibleLayer::None
-    } else {
-        visible_layer
-    };
-
-    let payload = TranslationPayload {
-        generation,
-        frame_id: frame_id.to_string(),
-        selection: Some(selection.clone()),
-        capture: capture.clone(),
-        source_language: source_language.to_string(),
-        target_language: target_language.to_string(),
-        detected_source: detected_source.clone(),
-        captured_at: captured_at.clone(),
-        unchanged: false,
-        visible_layer,
-        provider: provider.clone(),
-        prompt_profile: prompt_profile.clone(),
-        source_units: source_units.clone(),
-        translation_units: translation_units.clone(),
-    };
 
     let snapshot = state.set_translation(payload.clone());
     emit_snapshot(app, &snapshot);
     emit_translation(app, &payload);
-    emit_translation_partial(
-        app,
-        &TranslationPartialPayload {
-            generation,
-            frame_id: frame_id.to_string(),
-            selection: Some(selection.clone()),
-            capture,
-            source_language: source_language.to_string(),
-            target_language: target_language.to_string(),
-            detected_source,
-            captured_at,
-            visible_layer,
-            provider,
-            prompt_profile,
-            stage,
-            complete,
-            source_units,
-            translation_units,
-        },
-    );
+    emit_translation_partial(app, &frame_scene.partial(stage, complete));
 }
 
 fn summarize_ai_error(error: &str) -> String {
@@ -824,43 +463,33 @@ fn encode_frame_png_base64(frame: &crate::capture::CapturedFrame) -> Result<Stri
     Ok(BASE64_STANDARD.encode(buffer.into_inner()))
 }
 
-fn translation_cache() -> &'static Mutex<HashMap<String, AiTranslationResponse>> {
-    TRANSLATION_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn build_translation_cache_key(request: &AiTranslationRequest) -> Result<String> {
-    serde_json::to_string(&json!({
-        "endpoint": request.endpoint,
-        "providerId": request.provider_id,
-        "model": request.model,
-        "promptProfile": request.prompt_profile,
-        "sourceLanguage": request.source_language,
-        "targetLanguage": request.target_language,
-        "expectedItemCount": request.expected_item_count,
-        "items": request
-            .items
-            .iter()
-            .map(|item| {
-                json!({
-                    "index": item.index,
-                    "text": item.text,
-                    "rect": item.rect,
-                })
-            })
-            .collect::<Vec<_>>(),
-    }))
-    .context("failed to serialize translation cache key")
-}
-
 #[cfg(test)]
 mod tests {
     use image::RgbaImage;
 
-    use super::*;
+    use super::{build_translation_cache_key, overlay_source_units};
     use crate::{
+        domain::{
+            scene::{SceneBuilder, canonicalize_ocr_lines},
+            translation::align_translation_units,
+        },
         capture::CapturedFrame,
-        models::{AiTranslationItem, CaptureCoordinateSpace, CaptureMetadata, PixelRect},
+        models::{
+            AiTranslationItem, AiTranslationResponse, AiTranslationRequest,
+            AiTranslationSourceItem, CaptureCoordinateSpace, CaptureMetadata,
+            OcrRecognitionLine, OverlaySourceUnit, PixelRect, SelectionRect,
+            TranslationUnitState,
+        },
     };
+
+    fn build_units(
+        frame: &CapturedFrame,
+        lines: &[OcrRecognitionLine],
+        selection: &SelectionRect,
+        frame_id: &str,
+    ) -> Vec<OverlaySourceUnit> {
+        overlay_source_units(&SceneBuilder::new(frame, selection, frame_id).build_source_spans(lines))
+    }
 
     fn test_frame() -> CapturedFrame {
         CapturedFrame {
@@ -896,7 +525,7 @@ mod tests {
     #[test]
     fn source_units_are_sorted_and_id_aligned() {
         let frame = test_frame();
-        let units = build_source_units(
+        let units = build_units(
             &frame,
             &[
                 line("second", 16, 60),
@@ -931,17 +560,14 @@ mod tests {
     #[test]
     fn align_translation_units_marks_missing_without_source_fallback() {
         let frame = test_frame();
-        let source_units = build_source_units(
-            &frame,
-            &[line("Settings", 12, 20), line("Pinning", 12, 50)],
-            &SelectionRect {
-                x: 0,
-                y: 0,
-                width: 320,
-                height: 180,
-            },
-            "7:2",
-        );
+        let selection = SelectionRect {
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 180,
+        };
+        let source_spans = SceneBuilder::new(&frame, &selection, "7:2")
+            .build_source_spans(&[line("Settings", 12, 20), line("Pinning", 12, 50)]);
         let response = AiTranslationResponse {
             provider_id: "ollama".to_string(),
             model: "qwen3:8b".to_string(),
@@ -955,7 +581,7 @@ mod tests {
             }],
         };
 
-        let translation_units = align_translation_units(&source_units, &response);
+        let translation_units = align_translation_units(&source_spans, &response);
 
         assert_eq!(translation_units[0].state, TranslationUnitState::Translated);
         assert_eq!(translation_units[0].text, "設定");
@@ -981,7 +607,7 @@ mod tests {
             },
         };
 
-        let units = build_source_units(
+        let units = build_units(
             &frame,
             &[OcrRecognitionLine {
                 text: "Settings".to_string(),

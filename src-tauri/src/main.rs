@@ -3,6 +3,7 @@
 mod app;
 mod benchmark;
 mod capture;
+mod domain;
 mod models;
 mod sidecar;
 mod state;

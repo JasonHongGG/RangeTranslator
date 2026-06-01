@@ -1,7 +1,6 @@
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isTauri } from '../bridge'
 import type {
-  OverlaySourceUnit,
   RuntimeStatus,
   SelectionRect,
   TranslationPartialPayload,
@@ -140,96 +139,6 @@ export function sameSelection(
     left.width === right.width &&
     left.height === right.height
   )
-}
-
-export type OverlayViewport = {
-  width: number
-  height: number
-}
-
-export type OverlayCssRect = {
-  left: number
-  top: number
-  width: number
-  height: number
-}
-
-export function resolveOverlayUnitRect(
-  unit: OverlaySourceUnit,
-  selection: SelectionRect | null | undefined,
-  viewport: OverlayViewport,
-  options?: {
-    expandX?: number
-    expandY?: number
-  },
-): OverlayCssRect {
-  return resolveOverlayCssRect(unit.sourceRect, selection, viewport, options)
-}
-
-export function resolveOverlayCssRect(
-  sourceRect: SelectionRect,
-  selection: SelectionRect | null | undefined,
-  viewport: OverlayViewport,
-  options?: {
-    expandX?: number
-    expandY?: number
-  },
-): OverlayCssRect {
-  const safeViewportWidth = Math.max(viewport.width, 1)
-  const safeViewportHeight = Math.max(viewport.height, 1)
-  const expandX = Math.max(0, options?.expandX ?? 0)
-  const expandY = Math.max(0, options?.expandY ?? 0)
-
-  if (!selection) {
-    const left = Math.max(0, sourceRect.x - expandX)
-    const top = Math.max(0, sourceRect.y - expandY)
-    const right = left + Math.max(1, sourceRect.width) + expandX * 2
-    const bottom = top + Math.max(1, sourceRect.height) + expandY * 2
-    return {
-      left,
-      top,
-      width: Math.max(1, right - left),
-      height: Math.max(1, bottom - top),
-    }
-  }
-
-  const scaleX = safeViewportWidth / Math.max(selection.width, 1)
-  const scaleY = safeViewportHeight / Math.max(selection.height, 1)
-  const left = Math.max(0, sourceRect.x * scaleX - expandX)
-  const top = Math.max(0, sourceRect.y * scaleY - expandY)
-  const right = Math.min(
-    safeViewportWidth,
-    (sourceRect.x + Math.max(1, sourceRect.width)) * scaleX + expandX,
-  )
-  const bottom = Math.min(
-    safeViewportHeight,
-    (sourceRect.y + Math.max(1, sourceRect.height)) * scaleY + expandY,
-  )
-
-  return {
-    left,
-    top,
-    width: Math.max(1, right - left),
-    height: Math.max(1, bottom - top),
-  }
-}
-
-export function resolveOverlayTextMetrics(
-  unit: OverlaySourceUnit,
-  selection: SelectionRect | null | undefined,
-  viewport: OverlayViewport,
-) {
-  const scaleY = selection
-    ? Math.max(viewport.height, 1) / Math.max(selection.height, 1)
-    : 1
-
-  const fontSize = Math.max(10, unit.fontSize * scaleY)
-  const lineHeight = Math.max(fontSize, unit.lineHeight * scaleY)
-
-  return {
-    fontSize,
-    lineHeight,
-  }
 }
 
 export function toLogicalPixels(value: number, scaleFactor: number) {

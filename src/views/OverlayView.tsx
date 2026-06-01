@@ -18,11 +18,10 @@ import { formatUnknown, writeLocalDebug } from '../app/debug'
 import {
   mergeTranslationPartial,
   mergeTranslationUpdate,
-  resolveOverlayTextMetrics,
-  resolveOverlayUnitRect,
   sameSelection,
   shouldIgnoreWindowDrag,
 } from '../app/overlay'
+import { buildOverlayRenderModel } from '../app/overlay-view-model'
 import type {
   OverlayInteractionMode,
   RuntimeSnapshot,
@@ -30,27 +29,23 @@ import type {
   TranslationPartialPayload,
   TranslationPayload,
 } from '../types'
+import { OverlayDebugLayer } from './overlay/DebugLayer'
+import { OverlayMaskLayer } from './overlay/MaskLayer'
+import { OverlayTextLayer } from './overlay/TextLayer'
 
 export function OverlayView() {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
   const [translation, setTranslation] = useState<TranslationPayload>(PREVIEW_TRANSLATION)
   const deferredTranslation = useDeferredValue(translation)
-  const deferredSourceUnits = deferredTranslation.sourceUnits
-  const deferredTranslationUnits = deferredTranslation.translationUnits
-  const translationBySourceId = useMemo(
-    () => new Map(deferredTranslationUnits.map((unit) => [unit.sourceId, unit])),
-    [deferredTranslationUnits],
-  )
   const overlayWindow = useMemo(() => currentTauriWindow(), [])
   const boundsRef = useRef<SelectionRect | null>(PREVIEW_SNAPSHOT.selection)
   const overlayBoundsSyncArmedRef = useRef(false)
-  const isInteractive = snapshot.overlayMode !== 'passThrough'
-  const allowsTextSelection = snapshot.overlayMode === 'selectText'
-  const geometrySelection = snapshot.selection ?? deferredTranslation.selection
   const overlayViewport = {
     width: Math.max(window.innerWidth, 1),
     height: Math.max(window.innerHeight, 1),
   }
+  const renderModel = buildOverlayRenderModel(snapshot, deferredTranslation, overlayViewport)
+  const { allowsTextSelection, geometryContext, isInteractive, sourceUnits, translationBySourceId, visibleLayer } = renderModel
 
   const syncSnapshot = useEffectEvent((next: RuntimeSnapshot) => {
     startTransition(() => {
@@ -278,87 +273,24 @@ export function OverlayView() {
         <span className="overlay-corner overlay-corner-br"></span>
       </div>
 
-      {/* Pass 1: Background backdrops to obscure all original text */}
-      {deferredTranslation.visibleLayer !== 'none' && deferredSourceUnits.map((block) => {
-        const rect = resolveOverlayUnitRect(block, geometrySelection, overlayViewport, {
-          expandX: 1,
-          expandY: 1,
-        })
+      <OverlayMaskLayer
+        visible={visibleLayer !== 'none'}
+        sourceUnits={sourceUnits}
+        geometryContext={geometryContext}
+      />
 
-        return (
-        <div
-          key={`bg-${block.id}`}
-          className="overlay-backdrop"
-          style={{
-            left: rect.left,
-            top: rect.top,
-            width: rect.width,
-            height: rect.height,
-            background: block.background,
-          }}
-        />
-        )
-      })}
+      <OverlayTextLayer
+        sourceUnits={sourceUnits}
+        translationBySourceId={translationBySourceId}
+        geometryContext={geometryContext}
+        visibleLayer={visibleLayer}
+        allowsTextSelection={allowsTextSelection}
+      />
 
-      {/* Pass 2: Translated text blocks */}
-      {deferredTranslation.visibleLayer !== 'none' && deferredSourceUnits.map((block) => {
-        const translationUnit = translationBySourceId.get(block.id)
-        const translatedText = translationUnit?.text.trim() ?? ''
-        const hasTranslatedText = Boolean(
-          translationUnit &&
-            (translationUnit.state === 'translated' || translationUnit.streaming) &&
-            translatedText,
-        )
-        const text =
-          deferredTranslation.visibleLayer === 'ocr'
-            ? block.sourceText
-            : hasTranslatedText
-              ? translatedText
-              : block.sourceText
-
-        if (!text) {
-          return null
-        }
-
-        const rect = resolveOverlayUnitRect(block, geometrySelection, overlayViewport)
-        const textMetrics = resolveOverlayTextMetrics(
-          block,
-          geometrySelection,
-          overlayViewport,
-        )
-
-        return (
-          <article
-            key={block.id}
-            className={`overlay-block overlay-block-${block.align} ${translationUnit?.streaming ? 'overlay-block-streaming' : ''}`}
-            data-no-drag={allowsTextSelection ? 'true' : undefined}
-            style={{
-              left: rect.left,
-              top: rect.top,
-              width: rect.width,
-              height: rect.height,
-              color: block.foreground,
-              fontSize: textMetrics.fontSize,
-              lineHeight: `${textMetrics.lineHeight}px`,
-            }}
-          >
-            {text}
-          </article>
-        )
-      })}
-
-      {/* Pass 3: OCR bounding boxes for geometry inspection */}
-      {deferredSourceUnits.map((block) => {
-        const rect = resolveOverlayUnitRect(block, geometrySelection, overlayViewport)
-
-        return (
-          <div
-            key={`ocr-box-${block.id}`}
-            className="overlay-ocr-box"
-            style={rect}
-          />
-        )
-      })}
+      <OverlayDebugLayer
+        sourceUnits={sourceUnits}
+        geometryContext={geometryContext}
+      />
     </div>
   )
 }
