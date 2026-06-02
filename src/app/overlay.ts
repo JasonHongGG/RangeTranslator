@@ -1,12 +1,12 @@
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { isTauri } from '../bridge'
+import { isTauri } from '../bridge.ts'
 import type {
   RuntimeStatus,
   SelectionRect,
   TranslationPartialPayload,
   TranslationPayload,
   VisibleLayer,
-} from '../types'
+} from '../types.ts'
 
 export function normalizeSelection(
   start: { x: number; y: number },
@@ -116,13 +116,7 @@ export function mergeTranslationUpdate(
     return current
   }
 
-  const canReuseCurrentCapture =
-    next.generation === current.generation && next.frameId === current.frameId
-
-  return {
-    ...next,
-    capture: next.capture ?? (canReuseCurrentCapture ? current.capture : null),
-  }
+  return next
 }
 
 export function sameSelection(

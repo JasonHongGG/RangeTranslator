@@ -1,4 +1,4 @@
-import type { OverlaySourceUnit, SelectionRect } from '../types'
+import type { OverlaySourceUnit, SelectionRect } from '../types.ts'
 
 export type OverlayViewport = {
   width: number

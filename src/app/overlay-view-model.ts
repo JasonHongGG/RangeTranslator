@@ -4,12 +4,12 @@ import type {
   RuntimeSnapshot,
   TranslationPayload,
   VisibleLayer,
-} from '../types'
+} from '../types.ts'
 import {
   createOverlayGeometryContext,
   type OverlayGeometryContext,
   type OverlayViewport,
-} from './overlay-geometry'
+} from './overlay-geometry.ts'
 
 export type OverlayRenderModel = {
   sourceUnits: OverlaySourceUnit[]
@@ -31,7 +31,7 @@ export function buildOverlayRenderModel(
       translation.translationUnits.map((unit) => [unit.sourceId, unit]),
     ),
     geometryContext: createOverlayGeometryContext(
-      snapshot.selection ?? translation.selection,
+      translation.selection ?? snapshot.selection,
       viewport,
     ),
     visibleLayer: translation.visibleLayer,
@@ -45,6 +45,10 @@ export function resolveOverlayDisplayText(
   sourceUnit: OverlaySourceUnit,
   translationUnit: OverlayTranslationUnit | undefined,
 ) {
+  if (visibleLayer === 'none') {
+    return null
+  }
+
   const translatedText = translationUnit?.text.trim() ?? ''
   const hasTranslatedText = Boolean(
     translationUnit &&

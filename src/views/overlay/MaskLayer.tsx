@@ -17,10 +17,7 @@ export function OverlayMaskLayer({
   }
 
   return sourceUnits.map((block) => {
-    const rect = resolveOverlayUnitRect(block, geometryContext, {
-      expandX: 1,
-      expandY: 1,
-    })
+    const rect = resolveOverlayUnitRect(block, geometryContext)
 
     return (
       <div
