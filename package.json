@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test:overlay": "node --test --experimental-strip-types src/app/overlay.phase4.test.ts src/app/overlay.phase5.test.ts",
+    "test:overlay": "node --test --experimental-strip-types src/app/overlay.phase4.test.ts src/app/overlay.phase5.test.ts src/app/overlay.phase6.test.ts",
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri": "node scripts/tauri.mjs",

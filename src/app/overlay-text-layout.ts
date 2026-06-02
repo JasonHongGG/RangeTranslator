@@ -1,10 +1,10 @@
 import type { CSSProperties } from 'react'
-import type { OverlaySourceUnit } from '../types'
+import type { OverlaySourceUnit } from '../types.ts'
 import {
   resolveOverlayUnitRect,
   type OverlayCssRect,
   type OverlayGeometryContext,
-} from './overlay-geometry'
+} from './overlay-geometry.ts'
 
 type ScriptProfile = 'cjk' | 'latin'
 

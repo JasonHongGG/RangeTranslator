@@ -62,6 +62,29 @@ def source_items() -> list[dict[str, object]]:
     ]
 
 
+def long_source_items() -> list[dict[str, object]]:
+    return [
+        {
+            "id": "9:4/span-0",
+            "index": 0,
+            "text": "The layered overlay contract now preserves each OCR span independently.",
+            "rect": {"x": 16, "y": 18, "width": 420, "height": 32},
+        },
+        {
+            "id": "9:4/span-1",
+            "index": 1,
+            "text": "Long translated paragraphs must stay inside their original visual region.",
+            "rect": {"x": 16, "y": 58, "width": 440, "height": 34},
+        },
+        {
+            "id": "9:4/span-2",
+            "index": 2,
+            "text": "Badge colors should follow the original surface instead of the page background.",
+            "rect": {"x": 16, "y": 100, "width": 460, "height": 34},
+        },
+    ]
+
+
 class OllamaProviderAlignmentTests(unittest.TestCase):
     def setUp(self) -> None:
         self.provider = OllamaProvider()
@@ -272,6 +295,52 @@ class OllamaProviderAlignmentTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "kept the source wording"):
             extract_translation_batch(raw, tuple(self.request.items), "en-US", "zh-TW")
+
+    def test_accepts_long_multi_span_batch_without_collapsing_order(self) -> None:
+        request = TranslationRequest.from_payload(
+            {
+                "endpoint": "http://127.0.0.1:11434",
+                "providerId": "ollama",
+                "model": "qwen3:8b",
+                "promptProfile": "translation.ui_overlay.default",
+                "sourceLanguage": "en-US",
+                "targetLanguage": "zh-TW",
+                "expectedItemCount": 3,
+                "items": long_source_items(),
+            }
+        )
+
+        raw = json.dumps(
+            {
+                "detectedSource": "en-US",
+                "items": [
+                    {
+                        "id": "9:4/span-0",
+                        "index": 0,
+                        "translation": "分層 overlay 契約現在會分別保留每個 OCR 區塊。",
+                        "confidence": 0.88,
+                    },
+                    {
+                        "id": "9:4/span-1",
+                        "index": 1,
+                        "translation": "較長的翻譯段落也必須留在原本的視覺區塊內。",
+                        "confidence": 0.9,
+                    },
+                    {
+                        "id": "9:4/span-2",
+                        "index": 2,
+                        "translation": "badge 的顏色應該跟隨原本表面，而不是整個頁面背景。",
+                        "confidence": 0.87,
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+        _, items = extract_translation_batch(raw, tuple(request.items), "en-US", "zh-TW")
+
+        self.assertEqual([item.id for item in items], ["9:4/span-0", "9:4/span-1", "9:4/span-2"])
+        self.assertEqual(items[1].translation, "較長的翻譯段落也必須留在原本的視覺區塊內。")
 
     def test_repair_prompt_omits_invalid_response_echo(self) -> None:
         prompt = render_repair_prompt(
