@@ -6,6 +6,13 @@ use screenshots::Screen;
 
 use crate::models::{CaptureCoordinateSpace, CaptureMetadata, PixelRect, SelectionRect};
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct EstimatedSpanStyle {
+    pub foreground: String,
+    pub background: String,
+    pub confidence: f32,
+}
+
 const FRAME_SIGNATURE_GRID: usize = 12;
 const FRAME_SIGNATURE_BUCKETS: usize = FRAME_SIGNATURE_GRID * FRAME_SIGNATURE_GRID;
 const FRAME_SIGNATURE_CHANGED_CELL_DELTA: u32 = 8;
@@ -208,7 +215,7 @@ pub fn capture_region(selection: &SelectionRect) -> Result<CapturedFrame> {
     })
 }
 
-pub fn estimate_colors(image: &RgbaImage, rect: &PixelRect) -> (String, String) {
+pub fn estimate_colors(image: &RgbaImage, rect: &PixelRect) -> EstimatedSpanStyle {
     let x0 = rect.x.min(image.width().saturating_sub(1));
     let y0 = rect.y.min(image.height().saturating_sub(1));
     let x1 = (rect.x + rect.width).min(image.width());
@@ -222,19 +229,33 @@ pub fn estimate_colors(image: &RgbaImage, rect: &PixelRect) -> (String, String) 
 
     let mut inner = Vec::new();
     let mut ring = Vec::new();
+    let mut border = Vec::new();
+    let border_inset_x = ((x1.saturating_sub(x0)) / 5).clamp(1, 4);
+    let border_inset_y = ((y1.saturating_sub(y0)) / 5).clamp(1, 4);
 
     for y in outer_y0..outer_y1 {
         for x in outer_x0..outer_x1 {
             let pixel = image.get_pixel(x, y).0;
             if x >= x0 && x < x1 && y >= y0 && y < y1 {
                 inner.push(pixel);
+                let is_border = x < x0 + border_inset_x
+                    || x >= x1.saturating_sub(border_inset_x)
+                    || y < y0 + border_inset_y
+                    || y >= y1.saturating_sub(border_inset_y);
+                if is_border {
+                    border.push(pixel);
+                }
             } else {
                 ring.push(pixel);
             }
         }
     }
 
-    let background = dominant_color(if ring.is_empty() { &inner } else { &ring });
+    let ring_stats = ColorStats::from_pixels(&ring);
+    let border_stats = ColorStats::from_pixels(&border);
+    let inner_stats = ColorStats::from_pixels(&inner);
+
+    let background = resolve_background_color(&ring_stats, &border_stats, &inner_stats);
     let mut scored = inner
         .iter()
         .map(|pixel| (color_distance(*pixel, background), *pixel))
@@ -248,13 +269,19 @@ pub fn estimate_colors(image: &RgbaImage, rect: &PixelRect) -> (String, String) 
         .filter(|(distance, _)| *distance >= 18.0)
         .map(|(_, pixel)| *pixel)
         .collect::<Vec<_>>();
+    let foreground_support = if inner.is_empty() {
+        0.0
+    } else {
+        foreground_candidates.len() as f32 / inner.len() as f32
+    };
     let foreground = dominant_color(if foreground_candidates.is_empty() {
         &inner
     } else {
         &foreground_candidates
     });
 
-    let resolved_foreground = if color_distance(foreground, background) < 28.0 {
+    let used_contrast_fallback = color_distance(foreground, background) < 28.0;
+    let resolved_foreground = if used_contrast_fallback {
         if luminance(background[0], background[1], background[2]) > 148.0 {
             [18, 26, 33, 255]
         } else {
@@ -264,7 +291,185 @@ pub fn estimate_colors(image: &RgbaImage, rect: &PixelRect) -> (String, String) 
         foreground
     };
 
-    (to_hex(resolved_foreground), to_hex(background))
+    let confidence = estimate_style_confidence(
+        &ring_stats,
+        &border_stats,
+        &inner_stats,
+        background,
+        resolved_foreground,
+        foreground_support,
+        used_contrast_fallback,
+    );
+
+    EstimatedSpanStyle {
+        foreground: to_hex(resolved_foreground),
+        background: to_hex(background),
+        confidence,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ColorBucket {
+    color: [u8; 4],
+    count: usize,
+}
+
+#[derive(Debug, Clone)]
+struct ColorStats {
+    buckets: Vec<ColorBucket>,
+    total: usize,
+}
+
+impl ColorStats {
+    fn from_pixels(pixels: &[[u8; 4]]) -> Self {
+        if pixels.is_empty() {
+            return Self {
+                buckets: Vec::new(),
+                total: 0,
+            };
+        }
+
+        let mut buckets = HashMap::<(u8, u8, u8), Vec<[u8; 4]>>::new();
+        for pixel in pixels {
+            let key = quantize_key(*pixel);
+            buckets.entry(key).or_default().push(*pixel);
+        }
+
+        let mut resolved = buckets
+            .into_iter()
+            .map(|(_, pixels)| ColorBucket {
+                color: average_color(&pixels),
+                count: pixels.len(),
+            })
+            .collect::<Vec<_>>();
+        resolved.sort_by(|left, right| right.count.cmp(&left.count));
+
+        Self {
+            buckets: resolved,
+            total: pixels.len(),
+        }
+    }
+
+    fn primary(&self) -> Option<&ColorBucket> {
+        self.buckets.first()
+    }
+
+    fn share_near_color(&self, color: [u8; 4], tolerance: f32) -> f32 {
+        if self.total == 0 {
+            return 0.0;
+        }
+
+        self.buckets
+            .iter()
+            .filter(|bucket| color_distance(bucket.color, color) <= tolerance)
+            .map(|bucket| bucket.count as f32)
+            .sum::<f32>()
+            / self.total as f32
+    }
+
+    fn second_share(&self) -> f32 {
+        if self.total == 0 {
+            return 0.0;
+        }
+
+        self.buckets
+            .get(1)
+            .map(|bucket| bucket.count as f32 / self.total as f32)
+            .unwrap_or(0.0)
+    }
+}
+
+fn resolve_background_color(
+    ring_stats: &ColorStats,
+    border_stats: &ColorStats,
+    inner_stats: &ColorStats,
+) -> [u8; 4] {
+    let mut candidates = Vec::<[u8; 4]>::new();
+    if let Some(bucket) = ring_stats.primary() {
+        candidates.push(bucket.color);
+    }
+    if let Some(bucket) = border_stats.primary() {
+        candidates.push(bucket.color);
+    }
+    if let Some(bucket) = inner_stats.primary() {
+        candidates.push(bucket.color);
+    }
+
+    let mut unique = Vec::<[u8; 4]>::new();
+    for color in candidates {
+        if unique
+            .iter()
+            .all(|existing| color_distance(*existing, color) > 10.0)
+        {
+            unique.push(color);
+        }
+    }
+
+    if unique.is_empty() {
+        return [32, 32, 32, 255];
+    }
+
+    unique
+        .into_iter()
+        .max_by(|left, right| {
+            background_candidate_score(*left, ring_stats, border_stats, inner_stats)
+                .total_cmp(&background_candidate_score(*right, ring_stats, border_stats, inner_stats))
+        })
+        .unwrap_or([32, 32, 32, 255])
+}
+
+fn background_candidate_score(
+    color: [u8; 4],
+    ring_stats: &ColorStats,
+    border_stats: &ColorStats,
+    inner_stats: &ColorStats,
+) -> f32 {
+    let ring_share = ring_stats.share_near_color(color, 14.0);
+    let border_share = border_stats.share_near_color(color, 14.0);
+    let inner_share = inner_stats.share_near_color(color, 14.0);
+    let consistency = 1.0 - (ring_share - border_share).abs().min(1.0);
+
+    (ring_share * 0.42) + (border_share * 0.9) + (inner_share * 0.3) + (consistency * 0.18)
+}
+
+fn estimate_style_confidence(
+    ring_stats: &ColorStats,
+    border_stats: &ColorStats,
+    inner_stats: &ColorStats,
+    background: [u8; 4],
+    foreground: [u8; 4],
+    foreground_support: f32,
+    used_contrast_fallback: bool,
+) -> f32 {
+    let contrast = normalized_contrast(color_distance(foreground, background));
+    let background_support = ((ring_stats.share_near_color(background, 14.0) * 0.4)
+        + (border_stats.share_near_color(background, 14.0) * 0.9)
+        + (inner_stats.share_near_color(background, 14.0) * 0.2))
+        .clamp(0.0, 1.0);
+    let border_dominance = border_stats
+        .primary()
+        .map(|bucket| bucket.count as f32 / border_stats.total.max(1) as f32)
+        .unwrap_or(0.0);
+    let ambiguity_penalty = (border_stats.second_share() * 0.25 + ring_stats.second_share() * 0.18)
+        .clamp(0.0, 0.35);
+    let foreground_evidence = (foreground_support * 3.0).clamp(0.0, 1.0);
+    let fallback_penalty = if used_contrast_fallback { 0.42 } else { 0.0 };
+
+    ((background_support * 0.42)
+        + (border_dominance * 0.18)
+        + (contrast * 0.2)
+        + (foreground_evidence * 0.28)
+        - ambiguity_penalty
+        - fallback_penalty)
+        .clamp(0.12, 0.98)
+}
+
+fn normalized_contrast(distance: f32) -> f32 {
+    ((distance - 18.0) / 96.0).clamp(0.0, 1.0)
+}
+
+fn quantize_key(pixel: [u8; 4]) -> (u8, u8, u8) {
+    (pixel[0] / 12, pixel[1] / 12, pixel[2] / 12)
 }
 
 fn dominant_color(pixels: &[[u8; 4]]) -> [u8; 4] {
@@ -274,7 +479,7 @@ fn dominant_color(pixels: &[[u8; 4]]) -> [u8; 4] {
 
     let mut buckets = HashMap::<(u8, u8, u8), Vec<[u8; 4]>>::new();
     for pixel in pixels {
-        let key = (pixel[0] / 16, pixel[1] / 16, pixel[2] / 16);
+        let key = quantize_key(*pixel);
         buckets.entry(key).or_default().push(*pixel);
     }
 
@@ -342,7 +547,7 @@ mod tests {
             }
         }
 
-        let (foreground, background) = estimate_colors(
+        let style = estimate_colors(
             &image,
             &PixelRect {
                 x: 10,
@@ -352,15 +557,16 @@ mod tests {
             },
         );
 
-        assert_eq!(background, "#1E1E1E");
-        assert_eq!(foreground, "#F0E6D2");
+        assert_eq!(style.background, "#1E1E1E");
+        assert_eq!(style.foreground, "#F0E6D2");
+        assert!(style.confidence > 0.7);
     }
 
     #[test]
     fn estimate_colors_falls_back_to_high_contrast_when_inner_block_is_flat() {
         let image = RgbaImage::from_pixel(24, 16, Rgba([236, 234, 228, 255]));
 
-        let (foreground, background) = estimate_colors(
+        let style = estimate_colors(
             &image,
             &PixelRect {
                 x: 4,
@@ -370,7 +576,70 @@ mod tests {
             },
         );
 
-        assert_eq!(background, "#ECEAE4");
-        assert_eq!(foreground, "#121A21");
+        assert_eq!(style.background, "#ECEAE4");
+        assert_eq!(style.foreground, "#121A21");
+        assert!(style.confidence < 0.5);
+    }
+
+    #[test]
+    fn estimate_colors_prefers_badge_fill_over_outer_page_background() {
+        let mut image = RgbaImage::from_pixel(80, 32, Rgba([245, 244, 241, 255]));
+        for y in 8..24 {
+            for x in 16..64 {
+                image.put_pixel(x, y, Rgba([41, 101, 168, 255]));
+            }
+        }
+        for y in 12..20 {
+            for x in 28..52 {
+                image.put_pixel(x, y, Rgba([247, 248, 250, 255]));
+            }
+        }
+
+        let style = estimate_colors(
+            &image,
+            &PixelRect {
+                x: 24,
+                y: 10,
+                width: 32,
+                height: 12,
+            },
+        );
+
+        assert_eq!(style.background, "#2965A8");
+        assert_eq!(style.foreground, "#F7F8FA");
+        assert!(style.confidence > 0.75);
+    }
+
+    #[test]
+    fn estimate_colors_handles_gradient_surfaces_without_collapsing_to_black_or_white() {
+        let mut image = RgbaImage::from_pixel(64, 28, Rgba([0, 0, 0, 255]));
+        for x in 0..64 {
+            let mix = x as f32 / 63.0;
+            let red = (18.0 + (42.0 * mix)).round() as u8;
+            let green = (36.0 + (70.0 * mix)).round() as u8;
+            let blue = (68.0 + (92.0 * mix)).round() as u8;
+            for y in 0..28 {
+                image.put_pixel(x, y, Rgba([red, green, blue, 255]));
+            }
+        }
+        for y in 8..20 {
+            for x in 18..46 {
+                image.put_pixel(x, y, Rgba([243, 246, 249, 255]));
+            }
+        }
+
+        let style = estimate_colors(
+            &image,
+            &PixelRect {
+                x: 16,
+                y: 6,
+                width: 32,
+                height: 14,
+            },
+        );
+
+        assert_ne!(style.background, "#FFFFFF");
+        assert_ne!(style.background, "#000000");
+        assert!(style.confidence > 0.55);
     }
 }

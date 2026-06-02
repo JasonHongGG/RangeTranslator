@@ -1,4 +1,5 @@
 import { resolveOverlayTextLayout } from '../../app/overlay-text-layout'
+import { resolveOverlayStyle } from '../../app/overlay-style'
 import {
   resolveOverlayDisplayText,
   type OverlayRenderModel,
@@ -29,6 +30,7 @@ export function OverlayTextLayer({
     }
 
     const textLayout = resolveOverlayTextLayout(block, text, geometryContext)
+    const resolvedStyle = resolveOverlayStyle(block)
 
     return (
       <article
@@ -40,7 +42,7 @@ export function OverlayTextLayer({
           top: textLayout.rect.top,
           width: textLayout.rect.width,
           height: textLayout.rect.height,
-          color: block.foreground,
+          color: resolvedStyle.foreground,
           fontSize: textLayout.fontSize,
           lineHeight: `${textLayout.lineHeight}px`,
           whiteSpace: textLayout.whiteSpace,

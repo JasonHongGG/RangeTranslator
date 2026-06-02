@@ -53,6 +53,7 @@ export type OverlaySourceUnit = {
   confidence: number
   foreground: string
   background: string
+  styleConfidence: number
   align: TextAlign
 }
 

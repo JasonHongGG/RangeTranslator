@@ -50,6 +50,7 @@ export const PREVIEW_TRANSLATION: TranslationPayload = {
       confidence: 0.92,
       foreground: '#F6E7C8',
       background: '#1C2229',
+      styleConfidence: 0.88,
       align: 'left',
     },
     {
@@ -63,6 +64,7 @@ export const PREVIEW_TRANSLATION: TranslationPayload = {
       confidence: 0.88,
       foreground: '#F7F5F2',
       background: '#113A45',
+      styleConfidence: 0.84,
       align: 'center',
     },
     {
@@ -76,6 +78,7 @@ export const PREVIEW_TRANSLATION: TranslationPayload = {
       confidence: 0.9,
       foreground: '#172127',
       background: '#F9DFC6',
+      styleConfidence: 0.91,
       align: 'left',
     },
   ],

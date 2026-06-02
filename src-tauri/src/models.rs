@@ -119,6 +119,7 @@ pub struct OverlaySourceUnit {
     pub confidence: f32,
     pub foreground: String,
     pub background: String,
+    pub style_confidence: f32,
     pub align: TextAlign,
 }
 

@@ -30,6 +30,7 @@ function createSourceUnit(overrides: Partial<OverlaySourceUnit> = {}): OverlaySo
     confidence: 0.95,
     foreground: '#ffffff',
     background: '#111111',
+    styleConfidence: 0.9,
     align: 'left',
     ...overrides,
   }

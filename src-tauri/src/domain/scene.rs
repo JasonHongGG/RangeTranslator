@@ -9,6 +9,7 @@ use super::geometry::{GeometryTransformer, TextMetrics, estimate_text_metrics};
 pub struct SpanStyle {
     pub foreground: String,
     pub background: String,
+    pub confidence: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,6 +38,7 @@ impl SourceSpan {
             confidence: self.confidence,
             foreground: self.style.foreground.clone(),
             background: self.style.background.clone(),
+            style_confidence: self.style.confidence,
             align: self.align,
         }
     }
@@ -69,7 +71,7 @@ impl<'a> SceneBuilder<'a> {
     }
 
     fn build_source_span(&self, line: &OcrRecognitionLine, order: usize) -> SourceSpan {
-        let (foreground, background) = estimate_colors(&self.frame.image, &line.rect);
+        let style = estimate_colors(&self.frame.image, &line.rect);
         let normalized_rect = self.transformer.selection_rect_from_frame_rect(&line.rect);
         let text_metrics = estimate_text_metrics(&normalized_rect, &line.text);
 
@@ -87,8 +89,9 @@ impl<'a> SceneBuilder<'a> {
             text_metrics,
             confidence: line.confidence,
             style: SpanStyle {
-                foreground,
-                background,
+                foreground: style.foreground,
+                background: style.background,
+                confidence: style.confidence,
             },
             align: TextAlign::Left,
         }

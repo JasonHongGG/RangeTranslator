@@ -1,4 +1,5 @@
 import { resolveOverlayUnitRect, type OverlayGeometryContext } from '../../app/overlay-geometry'
+import { resolveOverlayStyle } from '../../app/overlay-style'
 import type { OverlaySourceUnit } from '../../types'
 
 type OverlayMaskLayerProps = {
@@ -18,6 +19,7 @@ export function OverlayMaskLayer({
 
   return sourceUnits.map((block) => {
     const rect = resolveOverlayUnitRect(block, geometryContext)
+    const resolvedStyle = resolveOverlayStyle(block)
 
     return (
       <div
@@ -28,7 +30,7 @@ export function OverlayMaskLayer({
           top: rect.top,
           width: rect.width,
           height: rect.height,
-          background: block.background,
+          background: resolvedStyle.background,
         }}
       />
     )
