@@ -1,9 +1,4 @@
-from .ollama import OllamaProvider
+from .ai_provider import AIProvider, GenerateRequest, GenerateResponse
+from .provider_factory import ProviderFactory
 
-
-def build_ai_providers() -> dict[str, OllamaProvider]:
-    provider = OllamaProvider()
-    return {provider.id: provider}
-
-
-__all__ = ["OllamaProvider", "build_ai_providers"]
+__all__ = ["AIProvider", "GenerateRequest", "GenerateResponse", "ProviderFactory"]

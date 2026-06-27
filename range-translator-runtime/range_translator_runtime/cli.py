@@ -6,11 +6,12 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from range_translator_runtime.application import build_default_application
-from range_translator_runtime.runtime_environment import configure_process_environment
-
+from dotenv import load_dotenv
+from range_translator_runtime.app import AppContext, Dispatcher
+from range_translator_runtime.core import configure_process_environment
 
 def main() -> int:
+    load_dotenv()
     configure_process_environment()
     runtime_script = Path(__file__).resolve()
     subcommand = sys.argv[1] if len(sys.argv) > 1 else "status"
@@ -18,10 +19,11 @@ def main() -> int:
     if subcommand == "serve":
         return serve(runtime_script)
 
-    application = build_default_application(runtime_script)
+    context = AppContext()
+    dispatcher = Dispatcher(context)
     payload = _read_payload()
     try:
-        result = application.dispatch(subcommand, payload)
+        result = dispatcher.dispatch(subcommand, payload)
         sys.stdout.write(json.dumps(result))
         return 0
     except Exception as error:  # pragma: no cover - CLI error path
@@ -37,8 +39,10 @@ def main() -> int:
 
 
 def serve(runtime_script: Path) -> int:
+    load_dotenv()
     configure_process_environment()
-    application = build_default_application(runtime_script)
+    context = AppContext()
+    dispatcher = Dispatcher(context)
 
     while True:
         raw_line = sys.stdin.buffer.readline()
@@ -73,7 +77,7 @@ def serve(runtime_script: Path) -> int:
                 )
                 sys.stdout.flush()
 
-            result = application.dispatch(subcommand, payload, emit_event)
+            result = dispatcher.dispatch(subcommand, payload, emit_event)
             response = {
                 "requestId": request_id,
                 "ok": True,

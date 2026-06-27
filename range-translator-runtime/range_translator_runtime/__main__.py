@@ -1,4 +1,5 @@
-from range_translator_runtime.entrypoints.cli import main
+from range_translator_runtime.cli import main
 
-
-raise SystemExit(main())
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

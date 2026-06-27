@@ -8,6 +8,8 @@ dependencies = [
 	"Pillow>=10,<12",
 	"paddlex>=3.5,<3.6",
 	"paddleocr>=3.5,<4",
+	"google-cloud-aiplatform>=1.40,<2",
+	"python-dotenv>=1.0.0",
 ]
 
 [build-system]
