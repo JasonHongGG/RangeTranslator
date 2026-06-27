@@ -7,12 +7,11 @@ import {
 } from 'react'
 import { call, currentTauriWindow, isTauri, watchEvent } from '../bridge'
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from '../languages'
-import { CompactSelect } from '../components/CompactSelect'
 import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, PREVIEW_SNAPSHOT, type DebugPayload, type ResizeDirection } from '../app/constants'
 import { logDebugPayload } from '../app/debug'
 import { labelForStatus, shouldIgnoreWindowDrag, toneForStatus } from '../app/overlay'
 
-import { FiX, FiMinus, FiPlay, FiPause, FiCrop, FiGlobe, FiArrowRight, FiSettings } from "react-icons/fi";
+import { FiX, FiMinus, FiPlay, FiPause, FiCrop, FiSettings } from "react-icons/fi";
 import { RiPushpinLine, RiPushpinFill } from "react-icons/ri";
 
 import type { RuntimeSnapshot } from '../types'
@@ -21,8 +20,6 @@ import type { RuntimeSnapshot } from '../types'
 
 export function PanelView() {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
-  const [sourceLanguage, setSourceLanguage] = useState('auto')
-  const [targetLanguage, setTargetLanguage] = useState('zh-TW')
   const [busy, setBusy] = useState(false)
   const panelWindow = useMemo(() => currentTauriWindow(), [])
 
@@ -43,8 +40,6 @@ export function PanelView() {
         const next = await call<RuntimeSnapshot>('get_runtime_snapshot')
         if (!cancelled) {
           setSnapshot(next)
-          setSourceLanguage(next.sourceLanguage)
-          setTargetLanguage(next.targetLanguage)
         }
       } catch {
         // Browser preview keeps the embedded sample state.
@@ -162,7 +157,7 @@ export function PanelView() {
       event.preventDefault()
       void runCommand(() =>
         call(snapshot.running ? 'stop_pipeline' : 'start_pipeline', {
-          settings: { sourceLanguage, targetLanguage },
+          settings: { sourceLanguage: snapshot.sourceLanguage, targetLanguage: snapshot.targetLanguage },
         }),
       )
       return
@@ -241,23 +236,7 @@ export function PanelView() {
       </header>
 
       <section className="center-stage" data-tauri-drag-region>
-        <div className="lang-capsule" data-no-drag="true">
-          <CompactSelect
-            value={sourceLanguage}
-            disabled={snapshot.running || busy}
-            options={SOURCE_LANGUAGES}
-            onChange={setSourceLanguage}
-            menuSide="bottom"
-          />
-          <FiArrowRight className="lang-arrow" />
-          <CompactSelect
-            value={targetLanguage}
-            disabled={snapshot.running || busy}
-            options={TARGET_LANGUAGES}
-            onChange={setTargetLanguage}
-            menuSide="bottom"
-          />
-        </div>
+
 
         <div className="core-action-group">
           <button
@@ -268,7 +247,7 @@ export function PanelView() {
             onClick={() =>
               runCommand(() =>
                 call(snapshot.running ? 'stop_pipeline' : 'start_pipeline', {
-                  settings: { sourceLanguage, targetLanguage },
+                  settings: { sourceLanguage: snapshot.sourceLanguage, targetLanguage: snapshot.targetLanguage },
                 }),
               )
             }
@@ -292,21 +271,6 @@ export function PanelView() {
             >
               {snapshot.selection ? <FiX size={14} /> : <FiCrop size={14} />}
               <span>{selectionLabel}</span>
-            </button>
-
-            <button
-              type="button"
-              className={`ai-toggle-btn ${snapshot.aiTranslationEnabled ? 'active' : ''}`}
-              data-no-drag="true"
-              disabled={busy || !snapshot.selection}
-              title="AI Translation"
-              onClick={() =>
-                runCommand(() =>
-                  call('toggle_ai_translation', { enabled: !snapshot.aiTranslationEnabled }),
-                )
-              }
-            >
-              <FiGlobe size={16} />
             </button>
           </div>
         </div>

@@ -213,7 +213,7 @@ svg {
 }
 
 .window-btn.active {
-  color: var(--accent-yellow);
+  color: var(--ink-strong);
 }
 
 .window-btn.danger:hover:not(:disabled) {

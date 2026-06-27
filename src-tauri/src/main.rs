@@ -105,6 +105,7 @@ fn main() {
             commands::panel_close,
             commands::panel_minimize,
             commands::run_prompt_benchmark,
+            commands::set_languages,
             commands::set_overlay_interaction_mode,
             commands::toggle_ai_translation,
             commands::toggle_panel_pin,

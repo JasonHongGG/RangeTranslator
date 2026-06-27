@@ -243,6 +243,13 @@ impl SharedState {
         inner.snapshot.clone()
     }
 
+    pub fn set_languages(&self, source_language: String, target_language: String) -> RuntimeSnapshot {
+        let mut inner = self.inner.lock();
+        inner.snapshot.source_language = source_language;
+        inner.snapshot.target_language = target_language;
+        inner.snapshot.clone()
+    }
+
     pub fn set_provider_stack(
         &self,
         ocr_provider: String,

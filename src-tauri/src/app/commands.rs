@@ -117,6 +117,27 @@ pub fn toggle_ai_translation(
 }
 
 #[tauri::command]
+pub fn set_languages(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    source_language: String,
+    target_language: String,
+) -> Result<(), String> {
+    let snapshot = state.set_languages(source_language, target_language);
+    emit_debug(
+        &app,
+        "panel-backend",
+        "languages updated",
+        json!({
+            "source_language": snapshot.source_language,
+            "target_language": snapshot.target_language,
+        }),
+    );
+    emit_snapshot(&app, &snapshot);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn panel_close(app: AppHandle, state: State<'_, SharedState>) -> Result<(), String> {
     emit_debug(
         &app,

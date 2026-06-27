@@ -6,11 +6,13 @@ import {
   useState,
 } from 'react'
 import { call, currentTauriWindow, isTauri, watchEvent } from '../bridge'
+import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from '../languages'
+import { CompactSelect } from '../components/CompactSelect'
 import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, PREVIEW_SNAPSHOT, type DebugPayload, type ResizeDirection } from '../app/constants'
 import { logDebugPayload } from '../app/debug'
 import { shouldIgnoreWindowDrag } from '../app/overlay'
 
-import { FiX, FiMousePointer, FiCamera, FiEye, FiMove } from "react-icons/fi"
+import { FiX, FiMousePointer, FiCamera, FiEye, FiMove, FiGlobe, FiArrowRight } from "react-icons/fi"
 
 import type { OverlayInteractionMode, RuntimeSnapshot } from '../types'
 
@@ -167,6 +169,54 @@ export function SettingsView() {
             >
               <FiMove size={14} /> Drag
             </button>
+          </div>
+        </div>
+
+        <div className="setting-segmented" data-no-drag="true">
+          <div className="setting-segmented-header">
+            <FiGlobe size={18} />
+            <span className="setting-toggle-label">Translation</span>
+          </div>
+          
+          <div className="lang-capsule" style={{ margin: '8px 0 0 0', justifyContent: 'center' }}>
+            <CompactSelect
+              value={snapshot.sourceLanguage}
+              disabled={snapshot.running || busy}
+              options={SOURCE_LANGUAGES}
+              onChange={(val) => runCommand(() => call('set_languages', { sourceLanguage: val, targetLanguage: snapshot.targetLanguage }))}
+              menuSide="bottom"
+            />
+            <FiArrowRight className="lang-arrow" />
+            <CompactSelect
+              value={snapshot.targetLanguage}
+              disabled={snapshot.running || busy}
+              options={TARGET_LANGUAGES}
+              onChange={(val) => runCommand(() => call('set_languages', { sourceLanguage: snapshot.sourceLanguage, targetLanguage: val }))}
+              menuSide="bottom"
+            />
+          </div>
+        </div>
+
+        <div
+          className="setting-toggle"
+          data-no-drag="true"
+          onClick={() => {
+            if (busy) return;
+            runCommand(() =>
+              call('toggle_ai_translation', {
+                enabled: !snapshot.aiTranslationEnabled,
+              }),
+            )
+          }}
+        >
+          <div className="setting-toggle-info">
+            <div className="setting-toggle-icon">
+              <FiGlobe size={18} />
+            </div>
+            <span className="setting-toggle-label">AI Translation</span>
+          </div>
+          <div className={`switch ${snapshot.aiTranslationEnabled ? 'active' : ''}`}>
+            <div className="switch-thumb" />
           </div>
         </div>
 
