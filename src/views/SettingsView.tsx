@@ -6,6 +6,7 @@ import {
   useState,
 } from 'react'
 import { call, currentTauriWindow, isTauri, watchEvent } from '../bridge'
+import { Tooltip } from '../components/Tooltip'
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from '../languages'
 import { CompactSelect } from '../components/CompactSelect'
 import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, PREVIEW_SNAPSHOT, type DebugPayload, type ResizeDirection } from '../app/constants'
@@ -123,18 +124,19 @@ export function SettingsView() {
         </h2>
 
         <div className="window-controls" data-no-drag="true">
-          <button
-            type="button"
-            className="window-btn danger"
-            title="Close"
-            onClick={() => {
-              if (settingsWindow) {
-                settingsWindow.close()
-              }
-            }}
-          >
-            <FiX size={14} />
-          </button>
+          <Tooltip content="Close" position="bottom">
+            <button
+              type="button"
+              className="window-btn danger"
+              onClick={() => {
+                if (settingsWindow) {
+                  settingsWindow.close()
+                }
+              }}
+            >
+              <FiX size={14} />
+            </button>
+          </Tooltip>
         </div>
       </header>
 

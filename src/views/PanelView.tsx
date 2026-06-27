@@ -6,7 +6,7 @@ import {
   useState,
 } from 'react'
 import { call, currentTauriWindow, isTauri, watchEvent } from '../bridge'
-import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from '../languages'
+import { Tooltip } from '../components/Tooltip'
 import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, PREVIEW_SNAPSHOT, type DebugPayload, type ResizeDirection } from '../app/constants'
 import { logDebugPayload } from '../app/debug'
 import { labelForStatus, shouldIgnoreWindowDrag, toneForStatus } from '../app/overlay'
@@ -195,43 +195,51 @@ export function PanelView() {
         </div>
 
         <div className="window-controls" data-no-drag="true">
-          <button
-            type="button"
-            className="window-btn"
-            title="Settings"
-            onClick={() => runCommand(() => call('open_settings_window'))}
-          >
-            <FiSettings size={14} />
-          </button>
-          <button
-            type="button"
-            className={`window-btn ${snapshot.panelPinned ? 'active' : ''}`}
-            disabled={busy}
-            title="Pin Window"
-            onClick={() =>
-              runCommand(() =>
-                call('toggle_panel_pin', { enabled: !snapshot.panelPinned }),
-              )
-            }
-          >
-            {snapshot.panelPinned ? <RiPushpinFill size={14} /> : <RiPushpinLine size={14} />}
-          </button>
-          <button
-            type="button"
-            className="window-btn"
-            title="Minimize"
-            onClick={() => runCommand(() => call('panel_minimize'))}
-          >
-            <FiMinus size={14} />
-          </button>
-          <button
-            type="button"
-            className="window-btn danger"
-            title="Close"
-            onClick={() => runCommand(() => call('panel_close'))}
-          >
-            <FiX size={14} />
-          </button>
+          <Tooltip content="Settings" position="bottom">
+            <button
+              type="button"
+              className="window-btn"
+              onClick={() => runCommand(() => call('open_settings_window'))}
+            >
+              <FiSettings size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip content={snapshot.panelPinned ? "Unpin Window" : "Pin Window"} position="bottom">
+            <button
+              type="button"
+              className={`window-btn ${snapshot.panelPinned ? 'active' : ''}`}
+              disabled={busy}
+              onClick={() =>
+                runCommand(() =>
+                  call('toggle_panel_pin', { enabled: !snapshot.panelPinned }),
+                )
+              }
+            >
+              {snapshot.panelPinned ? (
+                <RiPushpinFill size={14} style={{ strokeWidth: 0, fill: 'currentColor' }} />
+              ) : (
+                <RiPushpinLine size={14} style={{ strokeWidth: 0, fill: 'currentColor' }} />
+              )}
+            </button>
+          </Tooltip>
+          <Tooltip content="Minimize" position="bottom">
+            <button
+              type="button"
+              className="window-btn"
+              onClick={() => runCommand(() => call('panel_minimize'))}
+            >
+              <FiMinus size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip content="Close" position="bottom">
+            <button
+              type="button"
+              className="window-btn danger"
+              onClick={() => runCommand(() => call('panel_close'))}
+            >
+              <FiX size={14} />
+            </button>
+          </Tooltip>
         </div>
       </header>
 
