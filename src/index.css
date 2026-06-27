@@ -950,3 +950,52 @@ svg {
 .overlay-mode {
   display: none;
 }
+
+/* Global Notifications */
+.notification-container {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.notification-toast {
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--ink-strong);
+  padding: 16px 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  animation: notification-slide-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  max-width: 320px;
+  word-wrap: break-word;
+  border-left: 4px solid var(--accent-blue);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.notification-toast:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+
+.notification-info { border-left-color: var(--accent-blue); }
+.notification-success { border-left-color: #10b981; }
+.notification-warning { border-left-color: var(--accent-yellow); }
+.notification-error { border-left-color: var(--danger); }
+
+@keyframes notification-slide-in {
+  0% { opacity: 0; transform: translateX(32px) scale(0.95); }
+  100% { opacity: 1; transform: translateX(0) scale(1); }
+}
