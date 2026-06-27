@@ -30,10 +30,15 @@ export function SelectorView() {
   })
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null)
   const [current, setCurrent] = useState<{ x: number; y: number } | null>(null)
+  const [pointerPos, setPointerPos] = useState({ x: 0, y: 0 })
+  const [showMagnifier, setShowMagnifier] = useState(false)
+  const [zoom, setZoom] = useState(3)
+  const [magnifierImage, setMagnifierImage] = useState<string | null>(null)
   const [lastDebugLine, setLastDebugLine] = useState('Selector mounted')
   const anchorRef = useRef<{ x: number; y: number } | null>(null)
   const dragMoveLoggedRef = useRef(false)
   const lifecycleBusyRef = useRef(false)
+  const isFetchingMagRef = useRef(false)
   const selectorWindow = useMemo(() => currentTauriWindow(), [])
   const currentWindowLabel = currentTauriWindowLabel() ?? 'browser'
   const injectedView = readInjectedView() ?? 'none'
@@ -260,9 +265,28 @@ export function SelectorView() {
     }
   }
 
+  const isSelecting = Boolean(anchor)
+
+  const MAGNIFIER_WIDTH = 160
+  const MAGNIFIER_HEIGHT = 160
+  const OFFSET = 24
+
+  let magX = pointerPos.x + OFFSET
+  let magY = pointerPos.y + OFFSET
+
+  if (magX + MAGNIFIER_WIDTH > window.innerWidth) {
+    magX = pointerPos.x - MAGNIFIER_WIDTH - OFFSET
+  }
+  if (magY + MAGNIFIER_HEIGHT > window.innerHeight) {
+    magY = pointerPos.y - MAGNIFIER_HEIGHT - OFFSET
+  }
+  if (magX < 0) magX = 0
+  if (magY < 0) magY = 0
+
   return (
     <div
       className="selector-page selector-ready"
+      style={{ backgroundColor: 'transparent' }}
       onPointerDown={(event) => {
         if (event.button !== 0) {
           writeLocalDebug('selector-ui', 'pointerdown ignored', {
@@ -292,6 +316,32 @@ export function SelectorView() {
         })
       }}
       onPointerMove={(event) => {
+        const x = event.clientX
+        const y = event.clientY
+        setPointerPos({ x, y })
+        setShowMagnifier(true)
+
+        if (!isFetchingMagRef.current) {
+          isFetchingMagRef.current = true
+          const dpr = window.devicePixelRatio || 1
+          const size = Math.ceil((MAGNIFIER_WIDTH / zoom) * dpr)
+          
+          const viewportWidth = Math.max(window.innerWidth, 1)
+          const viewportHeight = Math.max(window.innerHeight, 1)
+          const scaleX = selectorBounds.width / viewportWidth
+          const scaleY = selectorBounds.height / viewportHeight
+          const physX = selectorBounds.x + Math.round(x * scaleX)
+          const physY = selectorBounds.y + Math.round(y * scaleY)
+          
+          call<string>('get_magnifier_region', { x: physX, y: physY, size }).then(dataUrl => {
+            setMagnifierImage(dataUrl)
+            isFetchingMagRef.current = false
+          }).catch((err) => {
+            console.error(err)
+            isFetchingMagRef.current = false
+          })
+        }
+
         if (!anchorRef.current) {
           return
         }
@@ -347,37 +397,148 @@ export function SelectorView() {
         setAnchor(null)
         setCurrent(null)
       }}
+      onPointerLeave={() => {
+        setShowMagnifier(false)
+      }}
+      onWheel={(e) => {
+        let newZoom = zoom
+        if (e.deltaY < 0) {
+          newZoom = Math.min(zoom + 1, 20)
+        } else {
+          newZoom = Math.max(zoom - 1, 2)
+        }
+        setZoom(newZoom)
+        
+        if (!isFetchingMagRef.current) {
+           isFetchingMagRef.current = true
+           const dpr = window.devicePixelRatio || 1
+           const size = Math.ceil((MAGNIFIER_WIDTH / newZoom) * dpr)
+           
+           const viewportWidth = Math.max(window.innerWidth, 1)
+           const viewportHeight = Math.max(window.innerHeight, 1)
+           const scaleX = selectorBounds.width / viewportWidth
+           const scaleY = selectorBounds.height / viewportHeight
+           const physX = selectorBounds.x + Math.round(pointerPos.x * scaleX)
+           const physY = selectorBounds.y + Math.round(pointerPos.y * scaleY)
+           
+           call<string>('get_magnifier_region', { x: physX, y: physY, size }).then(dataUrl => {
+              setMagnifierImage(dataUrl)
+              isFetchingMagRef.current = false
+           }).catch((err) => {
+              isFetchingMagRef.current = false
+           })
+        }
+      }}
     >
-      <div className="selector-grid"></div>
-      <div className="selector-hud">
-        <span className="selector-chip selector-chip-live">Drag</span>
-        <span className="selector-chip">ESC</span>
-      </div>
+      <div 
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.3)',
+          pointerEvents: 'none',
+          transition: 'opacity 0.2s',
+          opacity: isSelecting ? 0 : 1
+        }} 
+      />
 
-      <aside className="selector-debug-banner">
-        <strong className="selector-debug-title">Selector Debug</strong>
-        <span className="selector-debug-copy">
-          window={currentWindowLabel} view={injectedView} origin={selectorBounds.x},
-          {selectorBounds.y}
-        </span>
-        <span className="selector-debug-copy">{lastDebugLine}</span>
-      </aside>
+
 
       {selection ? (
         <div
-          className="selector-rect"
           style={{
+            position: 'absolute',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.3)',
             left: selection.x,
             top: selection.y,
             width: selection.width,
             height: selection.height,
+            zIndex: 2,
           }}
         >
-          <span className="selector-size">
+          <div style={{ position: 'absolute', top: '-1px', left: '-1px', width: '12px', height: '12px', borderTop: '2px solid #60a5fa', borderLeft: '2px solid #60a5fa' }} />
+          <div style={{ position: 'absolute', top: '-1px', right: '-1px', width: '12px', height: '12px', borderTop: '2px solid #60a5fa', borderRight: '2px solid #60a5fa' }} />
+          <div style={{ position: 'absolute', bottom: '-1px', left: '-1px', width: '12px', height: '12px', borderBottom: '2px solid #60a5fa', borderLeft: '2px solid #60a5fa' }} />
+          <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '12px', height: '12px', borderBottom: '2px solid #60a5fa', borderRight: '2px solid #60a5fa' }} />
+
+          <div style={{
+            position: 'absolute',
+            top: '-28px',
+            left: '0',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            backdropFilter: 'blur(4px)',
+            color: 'white',
+            fontSize: '10px',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            fontFamily: 'monospace',
+            letterSpacing: '0.05em',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            opacity: 0.8,
+            whiteSpace: 'nowrap'
+          }}>
             {selection.width} × {selection.height}
-          </span>
+          </div>
         </div>
       ) : null}
+
+      {/* HUD Viewfinder Magnifier */}
+      {showMagnifier && magnifierImage && (
+        <div
+          style={{
+            position: 'absolute',
+            pointerEvents: 'none',
+            zIndex: 50,
+            backgroundColor: '#111',
+            border: '1px solid #444',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.8)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            left: magX,
+            top: magY,
+            width: MAGNIFIER_WIDTH,
+            height: MAGNIFIER_HEIGHT,
+          }}
+        >
+          {/* Header Bar */}
+          <div style={{ height: '20px', backgroundColor: '#222', borderBottom: '1px solid #444', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px', flexShrink: 0 }}>
+             <span style={{ color: '#888', fontSize: '9px', fontFamily: 'monospace', letterSpacing: '0.05em' }}>HUD_VIEW</span>
+             <span style={{ color: '#ccc', fontSize: '9px', fontFamily: 'monospace', letterSpacing: '0.05em' }}>{zoom}X</span>
+          </div>
+
+          {/* Image Container */}
+          <div style={{ position: 'relative', flex: 1, backgroundColor: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                backgroundImage: `url(${magnifierImage})`,
+                backgroundSize: '100% 100%',
+                backgroundPosition: 'center',
+                imageRendering: 'pixelated',
+              }}
+            />
+
+            {/* Central Hollow Crosshair */}
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+               <div 
+                 style={{ 
+                   width: zoom, 
+                   height: zoom, 
+                   boxShadow: '0 0 0 1px rgba(255,255,255,0.9), 0 0 0 2px rgba(0,0,0,0.6)' 
+                 }} 
+               />
+               
+               {/* Minimalist HUD Cross lines */}
+               <div style={{ position: 'absolute', width: '1px', height: '8px', backgroundColor: 'rgba(255,255,255,0.5)', top: 0, left: '50%', transform: 'translateX(-50%)' }} />
+               <div style={{ position: 'absolute', width: '1px', height: '8px', backgroundColor: 'rgba(255,255,255,0.5)', bottom: 0, left: '50%', transform: 'translateX(-50%)' }} />
+               <div style={{ position: 'absolute', height: '1px', width: '8px', backgroundColor: 'rgba(255,255,255,0.5)', left: 0, top: '50%', transform: 'translateY(-50%)' }} />
+               <div style={{ position: 'absolute', height: '1px', width: '8px', backgroundColor: 'rgba(255,255,255,0.5)', right: 0, top: '50%', transform: 'translateY(-50%)' }} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

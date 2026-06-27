@@ -117,6 +117,45 @@ pub fn toggle_ai_translation(
 }
 
 #[tauri::command]
+pub fn get_magnifier_region(x: i32, y: i32, size: u32) -> Result<String, String> {
+    use crate::capture::capture_region;
+    use crate::models::SelectionRect;
+    use image::codecs::png::{PngEncoder, CompressionType, FilterType};
+    use std::io::Cursor;
+    use base64::{Engine as _, engine::general_purpose};
+    use image::{ColorType, ImageEncoder};
+
+    let half = (size / 2) as i32;
+    let crop_x = x - half;
+    let crop_y = y - half;
+
+    let selection = SelectionRect {
+        x: crop_x,
+        y: crop_y,
+        width: size,
+        height: size,
+    };
+
+    let frame = capture_region(&selection).map_err(|e| e.to_string())?;
+
+    let mut buffer = Cursor::new(Vec::new());
+    let encoder = PngEncoder::new_with_quality(
+        &mut buffer,
+        CompressionType::Fast,
+        FilterType::NoFilter,
+    );
+    encoder.write_image(
+        frame.image.as_raw(),
+        frame.image.width(),
+        frame.image.height(),
+        ColorType::Rgba8.into(),
+    ).map_err(|e| e.to_string())?;
+    
+    let b64 = general_purpose::STANDARD.encode(buffer.into_inner());
+    Ok(format!("data:image/png;base64,{}", b64))
+}
+
+#[tauri::command]
 pub fn set_languages(
     app: AppHandle,
     state: State<'_, SharedState>,

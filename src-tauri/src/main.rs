@@ -114,6 +114,7 @@ fn main() {
             commands::submit_selection,
             commands::toggle_debug_screenshot_mode,
             commands::update_overlay_selection,
+            commands::get_magnifier_region,
         ])
         .run(tauri::generate_context!())
         .expect("tauri application failed")
