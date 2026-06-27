@@ -15,13 +15,13 @@ import { FiX, FiMinus, FiPlay, FiPause, FiCrop, FiSettings } from "react-icons/f
 import { RiPushpinLine, RiPushpinFill } from "react-icons/ri";
 
 import type { RuntimeSnapshot } from '../types'
-
-
+import { useNotification } from '../components/NotificationProvider'
 
 export function PanelView() {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
   const [busy, setBusy] = useState(false)
   const panelWindow = useMemo(() => currentTauriWindow(), [])
+  const { showNotification } = useNotification()
 
   const applySnapshot = useEffectEvent((next: RuntimeSnapshot) => {
     startTransition(() => {
@@ -91,6 +91,11 @@ export function PanelView() {
     setBusy(true)
     try {
       await action()
+    } catch (error) {
+      showNotification({
+        type: 'error',
+        message: error instanceof Error ? error.message : String(error)
+      })
     } finally {
       setBusy(false)
     }

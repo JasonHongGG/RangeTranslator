@@ -16,11 +16,13 @@ import { shouldIgnoreWindowDrag } from '../app/overlay'
 import { FiX, FiMousePointer, FiCamera, FiEye, FiMove, FiGlobe, FiArrowRight } from "react-icons/fi"
 
 import type { OverlayInteractionMode, RuntimeSnapshot } from '../types'
+import { useNotification } from '../components/NotificationProvider'
 
 export function SettingsView() {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
   const [busy, setBusy] = useState(false)
   const settingsWindow = useMemo(() => currentTauriWindow(), [])
+  const { showNotification } = useNotification()
 
   const applySnapshot = useEffectEvent((next: RuntimeSnapshot) => {
     startTransition(() => {
@@ -71,6 +73,11 @@ export function SettingsView() {
     setBusy(true)
     try {
       await action()
+    } catch (error) {
+      showNotification({
+        type: 'error',
+        message: error instanceof Error ? error.message : String(error)
+      })
     } finally {
       setBusy(false)
     }
