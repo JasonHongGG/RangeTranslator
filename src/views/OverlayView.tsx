@@ -39,7 +39,6 @@ export function OverlayView() {
   const deferredTranslation = useDeferredValue(translation)
   const overlayWindow = useMemo(() => currentTauriWindow(), [])
   const boundsRef = useRef<SelectionRect | null>(snapshot.selection)
-  const overlayBoundsSyncArmedRef = useRef(false)
   const overlayViewport = {
     width: Math.max(window.innerWidth, 1),
     height: Math.max(window.innerHeight, 1),
@@ -153,35 +152,21 @@ export function OverlayView() {
 
   useEffect(() => {
     if (!overlayWindow || !isTauri() || !isInteractive) {
-      overlayBoundsSyncArmedRef.current = false
       return
     }
 
     let detachMoved = () => {}
     let detachResized = () => {}
     let syncTimer: number | null = null
-    let settleTimer: number | null = null
 
     const queueSync = () => {
-      if (!overlayBoundsSyncArmedRef.current) {
-        return
-      }
-
       if (syncTimer !== null) {
         window.clearTimeout(syncTimer)
-      }
-
-      if (settleTimer !== null) {
-        window.clearTimeout(settleTimer)
       }
 
       syncTimer = window.setTimeout(() => {
         void syncOverlayBounds()
       }, 80)
-
-      settleTimer = window.setTimeout(() => {
-        overlayBoundsSyncArmedRef.current = false
-      }, 260)
     }
 
     void overlayWindow
@@ -204,12 +189,8 @@ export function OverlayView() {
       if (syncTimer !== null) {
         window.clearTimeout(syncTimer)
       }
-      if (settleTimer !== null) {
-        window.clearTimeout(settleTimer)
-      }
       detachMoved()
       detachResized()
-      overlayBoundsSyncArmedRef.current = false
     }
   }, [overlayWindow, isInteractive])
 
@@ -224,7 +205,6 @@ export function OverlayView() {
     }
 
     try {
-      overlayBoundsSyncArmedRef.current = true
       await overlayWindow.startDragging()
     } catch {
       // Ignore drag rejections from edge cases like rapid resize gestures.
@@ -242,7 +222,6 @@ export function OverlayView() {
     event.stopPropagation()
 
     try {
-      overlayBoundsSyncArmedRef.current = true
       await overlayWindow.startResizeDragging(direction)
     } catch {
       // Ignore resize rejections from unsupported host edge cases.
