@@ -8,8 +8,8 @@ from .contracts import TranslationRequest, TranslationSourceItem
 
 def build_system_prompt() -> str:
     return (
-        "You translate OCR text captured from a live desktop overlay into polished, natural UI wording. "
-        "Return JSON only. Do not add markdown, commentary, or explanatory notes."
+        "You translate OCR text captured from a live desktop screen. The text can be anything from UI labels to full paragraphs or articles. "
+        "Translate it into natural, polished, and refined wording. Return JSON only. Do not add markdown, commentary, or explanatory notes."
     )
 
 def build_user_prompt(request: TranslationRequest, validation_error: str = "") -> str:
@@ -19,8 +19,8 @@ def build_user_prompt(request: TranslationRequest, validation_error: str = "") -
         f"Translate ordered OCR source items for a realtime desktop overlay.\n"
         f"Source language hint: {request.source_language}. Target language: {request.target_language}.\n"
         f"Expected item count: {request.expected_item_count}.\n"
-        "Task context: Translate short desktop UI labels, menus, toggles, button text, tooltips, and status strings "
-        "so the user can understand them instantly without mentally reconstructing a literal translation.\n\n"
+        "Task context: Translate the provided text, which could be short UI labels, sentences, or paragraphs from articles. "
+        "Ensure the translation is not only natural but highly polished, capturing the nuance of the original intent, making it easy and enjoyable to read without mentally reconstructing a literal translation.\n\n"
     )
 
     if validation_error:
@@ -31,7 +31,7 @@ def build_user_prompt(request: TranslationRequest, validation_error: str = "") -
             "- Fix the structure first.\n"
             "- Preserve every id and index exactly.\n"
             "- Return exactly one item per source item.\n"
-            "- Keep translations concise and natural for desktop UI.\n"
+            "- Keep translations natural, polished, and context-appropriate.\n"
             "- Do not echo or discuss the invalid response.\n\n"
         )
 
@@ -66,24 +66,24 @@ def build_user_prompt(request: TranslationRequest, validation_error: str = "") -
         "OCR source items JSON:\n"
         f"{source_items_json}\n\n"
         "### Style Directives\n"
-        "- Write the translation the way a native software UI would present it.\n"
-        "- Prefer polished, immediately understandable wording over literal calques.\n"
-        "- Keep labels concise, but do not make them cryptic.\n"
-        "- Recover the most plausible UI intent when OCR is slightly noisy, as long as the surrounding item list supports that reading.\n"
-        "- Preserve tone consistency across related menu items and settings labels.\n\n"
+        "- Adapt your style to the context: use concise wording for UI elements, and expressive, well-crafted prose for sentences and articles.\n"
+        "- Always prioritize natural, elegant phrasing over literal, word-by-word calques.\n"
+        "- Ensure the final text reads beautifully in the target language while retaining the exact original meaning and nuance.\n"
+        "- Reconstruct the most plausible intended text when OCR is slightly noisy, based on surrounding context.\n"
+        "- Maintain consistent tone, whether it's the formal tone of a menu or the literary voice of an article.\n\n"
         "### Quality Checks\n"
         "- Every source item must have exactly one aligned output item with the same id and index.\n"
-        "- Do not leave a normal English UI label untranslated unless it is clearly a protected token or product name.\n"
-        "- Avoid awkward literal translations that force the user to infer the intended UI meaning.\n"
+        "- Do not leave text untranslated unless it is clearly a protected token, URL, or product name.\n"
+        "- Avoid awkward literal translations that sound robotic or unnatural.\n"
         "- Avoid duplicate phrases, filler wording, and explanatory suffixes.\n"
-        "- Keep wording short enough for overlay rendering while preserving the original UI intent.\n\n"
+        "- Balance conciseness (for UI elements) with descriptive richness (for paragraphs), always preserving the core intent and readability.\n\n"
         "### Hard Rules\n"
         "- Return JSON only.\n"
         "- Return exactly one output item for every input item.\n"
         "- Preserve each item's `id` and `index` exactly.\n"
         "- Do not merge, split, drop, reorder, or invent items.\n"
-        "- Keep each translation concise enough to fit the original UI slot.\n"
-        "- Prefer natural UI phrasing over literal word-by-word translation.\n"
+        "- Ensure translations match the length constraints implicitly (e.g., short for UI, full for sentences), but never compromise on polished phrasing.\n"
+        "- Prefer natural, elegant phrasing over literal word-by-word translation.\n"
         "- Keep shortcuts, numbers, URLs, file paths, IDs, hotkeys, and product names unchanged when appropriate.\n"
         "- If an item is already in the target language, keep it.\n"
         "- If an item text is empty, return an empty translation for the same id and index.\n"
