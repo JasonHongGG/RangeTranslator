@@ -278,7 +278,6 @@ class PaddleOcrProvider:
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=False,
-                show_log=False,
                 device="gpu:0",
             )
         return self._engines[cache_key]

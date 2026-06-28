@@ -66,6 +66,9 @@ export function SelectorView() {
 
     try {
       await call('close_selector_window')
+      lifecycleBusyRef.current = false
+      setAnchor(null)
+      setCurrent(null)
     } catch (error) {
       lifecycleBusyRef.current = false
       writeLocalDebug('selector-ui', 'cancel request failed', {
@@ -157,6 +160,11 @@ export function SelectorView() {
       writeLocalDebug('selector-ui', 'visibility change', {
         visibilityState: document.visibilityState,
       })
+      if (document.visibilityState === 'visible') {
+        lifecycleBusyRef.current = false
+        setAnchor(null)
+        setCurrent(null)
+      }
     }
 
     const onError = (event: ErrorEvent) => {
@@ -252,6 +260,9 @@ export function SelectorView() {
       writeLocalDebug('selector-ui', 'submit selection completed', {
         absoluteSelection,
       })
+      lifecycleBusyRef.current = false
+      setAnchor(null)
+      setCurrent(null)
     } catch (error) {
       lifecycleBusyRef.current = false
       writeLocalDebug('selector-ui', 'submit selection failed', {
