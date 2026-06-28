@@ -262,4 +262,22 @@ def _extract_translation_envelope(raw_content: str) -> dict[str, object]:
             raise RuntimeError("AI provider did not return a JSON object")
         content = content[start : end + 1]
 
-    return json.loads(content)
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as original_error:
+        # LLMs occasionally drop the final closing brace(s) on long arrays.
+        # Try appending common missing closings before failing.
+        fixes = [
+            content + "}",
+            content + "]}",
+            content.rstrip(", ") + "}",
+            content.rstrip(", ") + "]}",
+        ]
+        
+        for fixed_content in fixes:
+            try:
+                return json.loads(fixed_content)
+            except json.JSONDecodeError:
+                pass
+                
+        raise RuntimeError(f"AI provider returned invalid JSON that could not be automatically repaired: {original_error}") from original_error

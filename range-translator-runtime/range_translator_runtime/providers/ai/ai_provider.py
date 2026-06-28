@@ -19,12 +19,24 @@ class GenerateResponse:
     usage: dict[str, int] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
+@dataclass
+class GenerateStreamChunk:
+    text: str
+    is_finished: bool = False
+    usage: dict[str, int] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
 class AIProvider:
     @property
     def name(self) -> str:
         raise NotImplementedError
 
     def generate(self, request: GenerateRequest) -> GenerateResponse:
+        raise NotImplementedError
+
+    def generate_stream(self, request: GenerateRequest):
+        from typing import Iterator
+        # This is a type hint only since Python < 3.9 might complain about Iterator at runtime in some context
         raise NotImplementedError
 
     def descriptor(self) -> dict[str, Any]:

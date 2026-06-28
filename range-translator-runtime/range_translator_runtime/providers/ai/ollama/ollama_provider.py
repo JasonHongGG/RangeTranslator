@@ -5,10 +5,10 @@ import os
 import socket
 import urllib.error
 import urllib.request
-from typing import Any
+from typing import Any, Iterator
 
 from range_translator_runtime.core import Config
-from ..ai_provider import AIProvider, GenerateRequest, GenerateResponse
+from ..ai_provider import AIProvider, GenerateRequest, GenerateResponse, GenerateStreamChunk
 
 class OllamaProvider(AIProvider):
     def __init__(self, model: str | None = None) -> None:
@@ -82,3 +82,77 @@ class OllamaProvider(AIProvider):
             usage=usage,
             metadata={"provider": self.name, "model": model}
         )
+
+    def generate_stream(self, request: GenerateRequest) -> Iterator[GenerateStreamChunk]:
+        model = self._model
+        endpoint = self._endpoint
+
+        messages = []
+        if request.system_prompt:
+            messages.append({"role": "system", "content": request.system_prompt})
+        messages.append({"role": "user", "content": request.prompt})
+        
+        payload = {
+            "model": model,
+            "format": "json",
+            "stream": True,
+            "keep_alive": self._keep_alive,
+            "messages": messages,
+            "options": {
+                "temperature": request.temperature if request.temperature is not None else 0.7,
+            },
+        }
+
+        if request.max_tokens is not None:
+            payload["options"]["num_predict"] = request.max_tokens
+
+        if model.lower().startswith("qwen3"):
+            payload["think"] = False
+
+        http_request = urllib.request.Request(
+            f"{endpoint}/api/chat",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(http_request, timeout=self._chat_timeout) as response:
+                for line in response:
+                    decoded_line = line.decode("utf-8").strip()
+                    if not decoded_line:
+                        continue
+                    
+                    try:
+                        data = json.loads(decoded_line)
+                    except json.JSONDecodeError:
+                        continue
+                        
+                    message = data.get("message") or {}
+                    text = str(message.get("content") or "")
+                    is_finished = bool(data.get("done"))
+                    
+                    usage = None
+                    if is_finished:
+                        usage = {
+                            "promptTokens": data.get("prompt_eval_count") or 0,
+                            "completionTokens": data.get("eval_count") or 0,
+                            "totalTokens": (data.get("prompt_eval_count") or 0) + (data.get("eval_count") or 0),
+                        }
+                    
+                    yield GenerateStreamChunk(
+                        text=text,
+                        is_finished=is_finished,
+                        usage=usage,
+                        metadata={"provider": self.name, "model": model}
+                    )
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Ollama returned HTTP {error.code}: {detail}") from error
+        except (TimeoutError, socket.timeout) as error:
+            raise RuntimeError(
+                f"Ollama inference did not produce response headers within "
+                f"{self._chat_timeout}s for model '{model}' at {endpoint}."
+            ) from error
+        except urllib.error.URLError as error:
+            raise RuntimeError(f"Failed to reach Ollama endpoint: {error}") from error

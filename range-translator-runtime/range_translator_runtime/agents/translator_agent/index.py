@@ -12,8 +12,9 @@ from .contracts import (
     TranslationRequest,
     TranslationResult,
 )
-from .prompts import build_output_schema, build_system_prompt, build_user_prompt
+from .prompts import build_system_prompt, build_user_prompt
 from .validation import extract_translation_batch
+from .stream_parser import IncrementalJsonParser
 
 class TranslatorAgent(BaseAgent):
     def __init__(self, provider: AIProvider) -> None:
@@ -42,9 +43,8 @@ class TranslatorAgent(BaseAgent):
                 ai_log.finalize_success(result)
                 return result
 
-            output_schema = build_output_schema(request.items)
             system_prompt = build_system_prompt()
-            user_prompt = build_user_prompt(request, output_schema)
+            user_prompt = build_user_prompt(request)
             
             gen_request = GenerateRequest(
                 prompt=user_prompt,
@@ -55,9 +55,7 @@ class TranslatorAgent(BaseAgent):
             ai_log.add_chat_request(attempt=1, payload=gen_request.__dict__)
             
             self.logger.info(f"Generating content on {provider.name}")
-            response = provider.generate(gen_request)
-            content = response.text
-            ai_log.add_model_output(attempt=1, content=content)
+            content = self._run_generation_stream(gen_request, request, provider, emit_event, ai_log, attempt=1)
 
             try:
                 detected_source, translated_items = extract_translation_batch(
@@ -70,7 +68,7 @@ class TranslatorAgent(BaseAgent):
                 self.logger.warning(f"Validation failed, starting repair: {error}")
                 repair_count = 1
                 
-                repair_prompt = build_user_prompt(request, output_schema, str(error))
+                repair_prompt = build_user_prompt(request, str(error))
                 repair_gen_request = GenerateRequest(
                     prompt=repair_prompt,
                     system_prompt=system_prompt,
@@ -79,9 +77,7 @@ class TranslatorAgent(BaseAgent):
                 
                 ai_log.add_chat_request(attempt=2, payload=repair_gen_request.__dict__)
                 
-                repaired_response = provider.generate(repair_gen_request)
-                repaired_content = repaired_response.text
-                ai_log.add_model_output(attempt=2, content=repaired_content)
+                repaired_content = self._run_generation_stream(repair_gen_request, request, provider, emit_event, ai_log, attempt=2)
                 
                 detected_source, translated_items = extract_translation_batch(
                     repaired_content,
@@ -121,3 +117,39 @@ class TranslatorAgent(BaseAgent):
                 traceback_text=traceback.format_exc(),
             )
             raise
+
+    def _run_generation_stream(self, gen_request: GenerateRequest, request: TranslationRequest, provider: AIProvider, emit_event: EventEmitter | None, ai_log: AILoggerProvider, attempt: int) -> str:
+        stream_parser = IncrementalJsonParser()
+        content_chunks = []
+        
+        for chunk in provider.generate_stream(gen_request):
+            content_chunks.append(chunk.text)
+            parsed_objects = stream_parser.add_chunk(chunk.text)
+            
+            if emit_event is not None and parsed_objects:
+                for obj in parsed_objects:
+                    idx_val = int(obj["index"])
+                    matched_item = next((item for item in request.items if item.index == idx_val), None)
+                    item_id = matched_item.id if matched_item else str(obj.get("id", f"span-{idx_val}"))
+                    
+                    confidence = obj.get("confidence", 1.0)
+                    try:
+                        confidence = float(confidence)
+                    except (ValueError, TypeError):
+                        confidence = 1.0
+                        
+                    partial_payload = {
+                        "sourceId": item_id,
+                        "index": idx_val,
+                        "providerId": provider.name,
+                        "detectedSource": request.source_language,
+                        "translatedText": str(obj.get("translation", "")).strip(),
+                        "confidence": max(0.0, min(confidence, 1.0)),
+                        "done": False,
+                    }
+                    emit_event("translation_partial", partial_payload)
+                    ai_log.add_partial_event(partial_payload)
+
+        content = "".join(content_chunks)
+        ai_log.add_model_output(attempt=attempt, content=content)
+        return content
