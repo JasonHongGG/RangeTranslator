@@ -219,25 +219,40 @@
 .v2-selection-pill {
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.6);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-radius: 99px;
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  padding: 4px 6px 4px 16px;
-  box-shadow: var(--shadow-sm);
-  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
-.v2-pill-info {
+.v2-pill-reselect {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 6px 12px 6px 10px;
+  border-radius: 99px;
   color: var(--ink-strong);
+  background: transparent;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: pointer;
+}
+
+.v2-pill-reselect:hover {
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
 
 .v2-pill-icon {
   color: var(--accent-blue);
+  transition: transform 0.2s ease;
+}
+
+.v2-pill-reselect:hover .v2-pill-icon {
+  transform: scale(1.1);
 }
 
 .v2-pill-text {
@@ -247,39 +262,28 @@
   letter-spacing: 0.5px;
 }
 
-.v2-pill-actions {
-  display: flex;
-  align-items: center;
-  background: #fff;
-  border-radius: 99px;
-  padding: 4px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+.v2-pill-divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(0, 0, 0, 0.1);
+  margin: 0 2px;
 }
 
-.v2-pill-action-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
+.v2-pill-clear {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   color: var(--ink-soft);
-  transition: all 0.2s ease;
+  background: transparent;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: pointer;
 }
 
-.v2-pill-action-btn:hover {
-  background: rgba(59, 130, 246, 0.1);
-  color: var(--accent-blue);
-}
-
-.v2-pill-action-btn.danger:hover {
+.v2-pill-clear:hover {
   background: rgba(239, 68, 68, 0.1);
   color: var(--danger);
-}
-
-.v2-pill-divider {
-  width: 1px;
-  height: 12px;
-  background: rgba(0, 0, 0, 0.08);
-  margin: 0 4px;
+  transform: translateY(-1px);
 }

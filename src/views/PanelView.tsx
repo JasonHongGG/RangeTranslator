@@ -332,23 +332,28 @@ export function PanelView() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2, duration: 0.3 }}
               >
-                <div className="v2-pill-info">
-                  <FiCrop size={14} className="v2-pill-icon" />
-                  <span className="v2-pill-text">{snapshot.selection?.width} x {snapshot.selection?.height}</span>
-                </div>
-                <div className="v2-pill-actions">
-                  <Tooltip content="Reselect" position="top">
-                    <button className="v2-pill-action-btn" onClick={() => runCommand(() => call('open_selector_window'))}>
-                      <FiCrop size={12} />
-                    </button>
-                  </Tooltip>
-                  <div className="v2-pill-divider" />
-                  <Tooltip content="Clear" position="top">
-                    <button className="v2-pill-action-btn danger" onClick={() => runCommand(() => call('clear_selection'))}>
-                      <FiX size={12} />
-                    </button>
-                  </Tooltip>
-                </div>
+                <Tooltip content="Reselect Region" position="top">
+                  <button 
+                    type="button"
+                    className="v2-pill-reselect" 
+                    onClick={() => runCommand(() => call('open_selector_window'))}
+                  >
+                    <FiCrop size={14} className="v2-pill-icon" />
+                    <span className="v2-pill-text">{snapshot.selection?.width} x {snapshot.selection?.height}</span>
+                  </button>
+                </Tooltip>
+                
+                <div className="v2-pill-divider" />
+                
+                <Tooltip content="Clear Selection" position="top">
+                  <button 
+                    type="button"
+                    className="v2-pill-clear" 
+                    onClick={() => runCommand(() => call('clear_selection'))}
+                  >
+                    <FiX size={14} />
+                  </button>
+                </Tooltip>
               </motion.div>
             </motion.div>
           )}
