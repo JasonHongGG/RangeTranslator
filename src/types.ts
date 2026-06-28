@@ -107,7 +107,6 @@ export type ProviderDescriptor = {
   detail: string | null
 }
 
-}
 
 export type RuntimeCapabilities = {
   ocrProviders: ProviderDescriptor[]
@@ -148,8 +147,6 @@ export type RuntimeSnapshot = {
   selection: SelectionRect | null
   selectorBounds: SelectionRect | null
   overlayMode: OverlayInteractionMode
-  endpoint: string
-  model: string
   generation: number
   visibleLayer: VisibleLayer
   blockCount: number

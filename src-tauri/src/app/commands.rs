@@ -17,7 +17,7 @@ use crate::{
     state::SharedState,
 };
 
-const BACKGROUND_OCR_PREWARM_DELAY: Duration = Duration::from_secs(2);
+const BACKGROUND_OCR_PREWARM_DELAY: Duration = Duration::from_millis(100);
 
 #[tauri::command]
 pub fn get_runtime_snapshot(state: State<'_, SharedState>) -> crate::models::RuntimeSnapshot {
@@ -47,8 +47,6 @@ pub async fn run_prompt_benchmark(
     let capabilities = runtime_gateway().query_capabilities().await?;
     let snapshot = sync_runtime_defaults(&app, state.inner_clone(), &capabilities);
     run_default_prompt_benchmark(
-        &snapshot.endpoint,
-        &snapshot.model,
         &snapshot.ai_provider,
     )
     .await
@@ -232,6 +230,8 @@ pub async fn submit_selection(
         target_language: snapshot_before.target_language,
     };
 
+    windows::hide_window(&app, "selector");
+
     let content_protected = !snapshot_before.debug_screenshot_mode;
     windows::ensure_overlay_window(
         &app,
@@ -253,9 +253,6 @@ pub async fn submit_selection(
     );
     emit_snapshot(&app, &snapshot);
     emit_translation(&app, &state.translation());
-
-    windows::hide_window(&app, "selector");
-    windows::schedule_window_close(&app, "selector", 30);
 
     pipeline::begin_pipeline(&app, state.inner_clone(), settings);
 
@@ -292,11 +289,11 @@ pub fn clear_selection(app: AppHandle, state: State<'_, SharedState>) -> Result<
             "hasSelection": state.snapshot().selection.is_some(),
         }),
     );
-    if let Some(window) = app.get_webview_window("overlay") {
-        window.close().map_err(|error| error.to_string())?;
+    if let Some(_window) = app.get_webview_window("overlay") {
+        windows::hide_window(&app, "overlay");
     }
-    if let Some(window) = app.get_webview_window("selector") {
-        window.close().map_err(|error| error.to_string())?;
+    if let Some(_window) = app.get_webview_window("selector") {
+        windows::hide_window(&app, "selector");
     }
 
     let snapshot = state.clear_selection();

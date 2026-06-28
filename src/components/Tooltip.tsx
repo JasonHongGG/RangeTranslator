@@ -1,4 +1,5 @@
-import { ReactNode, useState, useRef } from 'react'
+import { useState, useRef } from 'react'
+import type { ReactNode } from 'react'
 
 interface TooltipProps {
   content: ReactNode

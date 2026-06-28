@@ -215,9 +215,7 @@ pub struct RuntimeCapabilities {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AiTranslationRequest {
-    pub endpoint: String,
     pub provider_id: String,
-    pub model: String,
     pub source_language: String,
     pub target_language: String,
     pub expected_item_count: usize,
@@ -278,7 +276,6 @@ pub struct OcrRecognitionResponse {
 #[serde(rename_all = "camelCase")]
 pub struct AiTranslationResponse {
     pub provider_id: String,
-    pub model: String,
     pub detected_source: String,
     pub items: Vec<AiTranslationItem>,
 }
@@ -298,7 +295,6 @@ pub struct AiTranslationDelta {
     pub source_id: String,
     pub index: usize,
     pub provider_id: String,
-    pub model: String,
     pub detected_source: Option<String>,
     pub translated_text: String,
     pub confidence: Option<f32>,
@@ -377,8 +373,6 @@ pub struct RuntimeSnapshot {
     pub selection: Option<SelectionRect>,
     pub selector_bounds: Option<SelectionRect>,
     pub overlay_mode: OverlayInteractionMode,
-    pub endpoint: String,
-    pub model: String,
     pub generation: u64,
     pub visible_layer: VisibleLayer,
     pub block_count: usize,
@@ -410,8 +404,6 @@ impl Default for RuntimeSnapshot {
             selection: None,
             selector_bounds: None,
             overlay_mode: OverlayInteractionMode::SelectText,
-            endpoint: String::new(),
-            model: "discovering".to_string(),
             generation: 0,
             visible_layer: VisibleLayer::None,
             block_count: 0,

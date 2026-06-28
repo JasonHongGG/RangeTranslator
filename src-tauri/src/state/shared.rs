@@ -20,10 +20,8 @@ struct AppRuntime {
 }
 
 impl SharedState {
-    pub fn new(endpoint: String, model: String) -> Self {
+    pub fn new() -> Self {
         let snapshot = RuntimeSnapshot {
-            endpoint,
-            model,
             ..RuntimeSnapshot::default()
         };
 
@@ -213,11 +211,6 @@ impl SharedState {
         inner.snapshot.clone()
     }
 
-    pub fn set_model(&self, model: String) -> RuntimeSnapshot {
-        let mut inner = self.inner.lock();
-        inner.snapshot.model = model;
-        inner.snapshot.clone()
-    }
 
     pub fn set_overlay_mode(&self, mode: OverlayInteractionMode) -> RuntimeSnapshot {
         let mut inner = self.inner.lock();
@@ -311,7 +304,7 @@ mod tests {
 
     #[test]
     fn translation_payload_does_not_overwrite_ai_provider_stack() {
-        let state = SharedState::new("http://localhost:11434".to_string(), "qwen3:8b".to_string());
+        let state = SharedState::new();
 
         state.set_provider_stack(
             "paddleocr".to_string(),

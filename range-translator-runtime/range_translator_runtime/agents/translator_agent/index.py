@@ -36,7 +36,6 @@ class TranslatorAgent(BaseAgent):
             if not request.items:
                 result = TranslationResult(
                     provider_id=provider.name,
-                    model=provider._model if hasattr(provider, '_model') else "unknown",
                     detected_source=request.source_language,
                     items=tuple(),
                 ).as_payload()
@@ -97,7 +96,6 @@ class TranslatorAgent(BaseAgent):
                         "sourceId": item.id,
                         "index": item.index,
                         "providerId": provider.name,
-                        "model": response.metadata.get("model", "unknown"),
                         "detectedSource": detected_source,
                         "translatedText": item.translation,
                         "confidence": item.confidence,
@@ -108,7 +106,6 @@ class TranslatorAgent(BaseAgent):
 
             result = TranslationResult(
                 provider_id=provider.name,
-                model=response.metadata.get("model", "unknown"),
                 detected_source=detected_source,
                 items=tuple(translated_items),
             ).as_payload()

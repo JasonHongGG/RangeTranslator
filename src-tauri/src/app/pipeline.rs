@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use image::{DynamicImage, ImageFormat};
+use image::ImageEncoder;
 use serde_json::json;
 use tauri::AppHandle;
 
@@ -74,7 +74,12 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             break;
         };
 
-        let frame = capture_region(&selection)?;
+        let selection_for_capture = selection.clone();
+        let frame = match tokio::task::spawn_blocking(move || capture_region(&selection_for_capture)).await {
+            Ok(Ok(frame)) => frame,
+            Ok(Err(e)) => return Err(e),
+            Err(e) => return Err(anyhow::Error::from(e)),
+        };
         if !state.is_token_active(token) {
             break;
         }
@@ -106,7 +111,13 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         let frame_id = format!("{token}:{frame_sequence}");
 
         emit_snapshot(&app, &state.set_status(RuntimeStatus::Recognizing, "OCR"));
-        let encoded_frame = encode_frame_png_base64(&frame)?;
+        let frame_for_encoding = frame.clone();
+        let encoded_frame_result = tokio::task::spawn_blocking(move || encode_frame_png_base64(&frame_for_encoding)).await;
+        let encoded_frame = match encoded_frame_result {
+            Ok(Ok(frame)) => frame,
+            Ok(Err(e)) => return Err(e),
+            Err(e) => return Err(anyhow::Error::from(e)),
+        };
         let recognized = runtime_gateway()
             .recognize(OcrRecognitionRequest {
                 provider_id: snapshot.ocr_provider.clone(),
@@ -288,9 +299,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         });
 
         let ai_request = AiTranslationRequest {
-            endpoint: snapshot.endpoint.clone(),
             provider_id: snapshot.ai_provider.clone(),
-            model: snapshot.model.clone(),
             source_language: recognized.language.clone(),
             target_language: snapshot.target_language.clone(),
             expected_item_count: ai_items.len(),
@@ -373,8 +382,7 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         );
         emit_snapshot(&app, &provider_snapshot);
 
-        let model_snapshot = state.set_model(translation.model.clone());
-        emit_snapshot(&app, &model_snapshot);
+
 
         let translated_scene = OverlayFrameScene::new(
             OverlayFrameContext {
@@ -448,10 +456,22 @@ fn summarize_ai_error(error: &str) -> String {
 }
 
 fn encode_frame_png_base64(frame: &crate::capture::CapturedFrame) -> Result<String> {
+    use image::codecs::png::{PngEncoder, CompressionType, FilterType};
+    use image::ColorType;
+
     let mut buffer = Cursor::new(Vec::new());
-    DynamicImage::ImageRgba8(frame.image.clone())
-        .write_to(&mut buffer, ImageFormat::Png)
-        .context("failed to encode captured frame as PNG")?;
+    let encoder = PngEncoder::new_with_quality(
+        &mut buffer,
+        CompressionType::Fast,
+        FilterType::NoFilter,
+    );
+    encoder.write_image(
+        frame.image.as_raw(),
+        frame.image.width(),
+        frame.image.height(),
+        ColorType::Rgba8.into(),
+    ).context("failed to encode captured frame as PNG")?;
+    
     Ok(BASE64_STANDARD.encode(buffer.into_inner()))
 }
 
@@ -562,7 +582,7 @@ mod tests {
             .build_source_spans(&[line("Settings", 12, 20), line("Pinning", 12, 50)]);
         let response = AiTranslationResponse {
             provider_id: "ollama".to_string(),
-            model: "qwen3:8b".to_string(),
+
             detected_source: "en-US".to_string(),
             items: vec![AiTranslationItem {
                 id: "7:2/span-0".to_string(),
@@ -702,9 +722,7 @@ mod tests {
     #[test]
     fn translation_cache_key_ignores_frame_scoped_span_ids() {
         let request_a = AiTranslationRequest {
-            endpoint: "http://127.0.0.1:11434".to_string(),
             provider_id: "ollama".to_string(),
-            model: "qwen3:8b".to_string(),
             source_language: "en-US".to_string(),
             target_language: "zh-TW".to_string(),
             expected_item_count: 1,

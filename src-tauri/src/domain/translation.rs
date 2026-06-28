@@ -100,9 +100,7 @@ pub fn translation_unit_from_delta(
 
 pub fn build_translation_cache_key(request: &AiTranslationRequest) -> Result<String> {
     serde_json::to_string(&json!({
-        "endpoint": request.endpoint,
         "providerId": request.provider_id,
-        "model": request.model,
         "sourceLanguage": request.source_language,
         "targetLanguage": request.target_language,
         "expectedItemCount": request.expected_item_count,

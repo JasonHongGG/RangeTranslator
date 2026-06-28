@@ -11,8 +11,6 @@ use crate::{
 use super::suite::load_default_benchmark_suite;
 
 pub async fn run_default_prompt_benchmark(
-    endpoint: &str,
-    model: &str,
     provider_id: &str,
 ) -> Result<BenchmarkReport, String> {
     let suite = load_default_benchmark_suite().map_err(|error| error.to_string())?;
@@ -47,9 +45,7 @@ pub async fn run_default_prompt_benchmark(
         let response = runtime_gateway()
             .translate(
                 AiTranslationRequest {
-                    endpoint: endpoint.to_string(),
                     provider_id: provider_id.to_string(),
-                    model: model.to_string(),
                     source_language: case.source_language.clone(),
                     target_language: case.target_language.clone(),
                     expected_item_count: items.len(),

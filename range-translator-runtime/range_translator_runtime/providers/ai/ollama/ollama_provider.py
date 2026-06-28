@@ -22,13 +22,16 @@ class OllamaProvider(AIProvider):
         return "ollama"
 
     def generate(self, request: GenerateRequest) -> GenerateResponse:
+        model = self._model
+        endpoint = self._endpoint
+
         messages = []
         if request.system_prompt:
             messages.append({"role": "system", "content": request.system_prompt})
         messages.append({"role": "user", "content": request.prompt})
         
         payload = {
-            "model": self._model,
+            "model": model,
             "format": "json",
             "keep_alive": self._keep_alive,
             "messages": messages,
@@ -40,11 +43,11 @@ class OllamaProvider(AIProvider):
         if request.max_tokens is not None:
             payload["options"]["num_predict"] = request.max_tokens
 
-        if self._model.lower().startswith("qwen3"):
+        if model.lower().startswith("qwen3"):
             payload["think"] = False
 
         http_request = urllib.request.Request(
-            f"{self._endpoint}/api/chat",
+            f"{endpoint}/api/chat",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -59,7 +62,7 @@ class OllamaProvider(AIProvider):
         except (TimeoutError, socket.timeout) as error:
             raise RuntimeError(
                 f"Ollama inference did not produce response headers within "
-                f"{self._chat_timeout}s for model '{self._model}' at {self._endpoint}."
+                f"{self._chat_timeout}s for model '{model}' at {endpoint}."
             ) from error
         except urllib.error.URLError as error:
             raise RuntimeError(f"Failed to reach Ollama endpoint: {error}") from error
@@ -76,5 +79,5 @@ class OllamaProvider(AIProvider):
         return GenerateResponse(
             text=text,
             usage=usage,
-            metadata={"provider": self.name, "model": self._model}
+            metadata={"provider": self.name, "model": model}
         )

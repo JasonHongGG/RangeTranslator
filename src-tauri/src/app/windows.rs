@@ -265,7 +265,6 @@ pub fn close_selector_window(app: &AppHandle, state: SharedState) -> Result<(), 
     );
     emit_snapshot(app, &snapshot);
     hide_window(app, "selector");
-    schedule_window_close(app, "selector", 30);
     Ok(())
 }
 
@@ -374,22 +373,6 @@ pub async fn ensure_overlay_window(
 
     rx.await
         .map_err(|_| "overlay main-thread callback dropped".to_string())?
-}
-
-pub fn schedule_window_close(app: &AppHandle, label: &str, delay_ms: u64) {
-    let app_handle = app.clone();
-    let window_label = label.to_string();
-
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-
-        let app_for_lookup = app_handle.clone();
-        let _ = app_handle.run_on_main_thread(move || {
-            if let Some(window) = app_for_lookup.get_webview_window(&window_label) {
-                let _ = window.close();
-            }
-        });
-    });
 }
 
 pub fn hide_window(app: &AppHandle, label: &str) {

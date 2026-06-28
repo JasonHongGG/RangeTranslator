@@ -61,14 +61,12 @@ class TranslatedItem:
 @dataclass(frozen=True)
 class TranslationResult:
     provider_id: str
-    model: str
     detected_source: str
     items: tuple[TranslatedItem, ...]
 
     def as_payload(self) -> JsonMap:
         return {
             "providerId": self.provider_id,
-            "model": self.model,
             "detectedSource": self.detected_source,
             "items": [item.as_payload() for item in self.items],
         }

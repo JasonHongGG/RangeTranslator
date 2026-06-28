@@ -14,8 +14,6 @@ export const PREVIEW_SNAPSHOT: RuntimeSnapshot = {
   selection: { x: 280, y: 180, width: 764, height: 312 },
   selectorBounds: { x: 0, y: 0, width: 1280, height: 720 },
   overlayMode: 'selectText',
-  endpoint: 'https://lacresha-posological-steven.ngrok-free.dev',
-  model: 'discovering',
   generation: 0,
   visibleLayer: 'translation',
   blockCount: 3,

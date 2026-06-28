@@ -9,13 +9,12 @@ import { call, currentTauriWindow, currentTauriWindowLabel, isTauri, watchEvent 
 import { DEBUG_EVENT, type DebugPayload } from '../app/constants'
 import {
   describeTarget,
-  formatDebugLine,
   formatUnknown,
   logDebugPayload,
   writeLocalDebug,
 } from '../app/debug'
 import { normalizeSelection } from '../app/overlay'
-import { readInjectedView, selectorOrigin } from '../app/routing'
+import { selectorOrigin } from '../app/routing'
 import type { RuntimeSnapshot, SelectionRect } from '../types'
 
 export function SelectorView() {
@@ -34,14 +33,13 @@ export function SelectorView() {
   const [showMagnifier, setShowMagnifier] = useState(false)
   const [zoom, setZoom] = useState(3)
   const [magnifierImage, setMagnifierImage] = useState<string | null>(null)
-  const [lastDebugLine, setLastDebugLine] = useState('Selector mounted')
+
   const anchorRef = useRef<{ x: number; y: number } | null>(null)
   const dragMoveLoggedRef = useRef(false)
   const lifecycleBusyRef = useRef(false)
   const isFetchingMagRef = useRef(false)
   const selectorWindow = useMemo(() => currentTauriWindow(), [])
-  const currentWindowLabel = currentTauriWindowLabel() ?? 'browser'
-  const injectedView = readInjectedView() ?? 'none'
+
 
   const selection = useMemo(() => {
     if (!anchor || !current) {
@@ -81,8 +79,6 @@ export function SelectorView() {
     let detach = () => {}
     if (isTauri()) {
       void watchEvent<DebugPayload>(DEBUG_EVENT, (payload) => {
-        const line = formatDebugLine(payload)
-        setLastDebugLine(line)
         logDebugPayload(payload)
       }).then((unlisten) => {
         detach = unlisten
@@ -424,7 +420,7 @@ export function SelectorView() {
            call<string>('get_magnifier_region', { x: physX, y: physY, size }).then(dataUrl => {
               setMagnifierImage(dataUrl)
               isFetchingMagRef.current = false
-           }).catch((err) => {
+           }).catch(() => {
               isFetchingMagRef.current = false
            })
         }
