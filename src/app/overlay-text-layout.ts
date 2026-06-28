@@ -29,7 +29,7 @@ export function resolveOverlayTextLayout(
   const baseFontSize = Math.max(10, unit.fontSize * geometryContext.scaleY)
   const maxFontSize = Math.max(
     10,
-    Math.min(baseFontSize, rect.height * 0.9, rect.width * (preserveSingleLine ? 0.92 : 1)),
+    Math.min(baseFontSize, rect.height * 0.95, rect.width * (preserveSingleLine ? 0.96 : 1)),
   )
   const minFontSize = Math.min(10, maxFontSize)
   const lineHeightRatio = clamp(

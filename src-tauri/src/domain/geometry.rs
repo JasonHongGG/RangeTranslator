@@ -41,10 +41,10 @@ pub fn estimate_text_metrics(rect: &PixelRect, text: &str) -> TextMetrics {
     let char_count = text.chars().count().max(1) as f32;
     let rect_height = rect.height.max(1) as f32;
     let rect_width = rect.width.max(1) as f32;
-    let height_bound = (rect_height * 0.82).clamp(10.0, 34.0);
-    let width_bound = ((rect_width / char_count).max(6.0) * 1.6).clamp(10.0, 34.0);
-    let font_size = height_bound.min(width_bound).clamp(10.0, 34.0);
-    let line_height = (font_size * 1.12).min((rect_height * 1.04).max(font_size));
+    let height_bound = (rect_height * 0.85).max(10.0);
+    let width_bound = ((rect_width / char_count).max(6.0) * 1.8).max(10.0);
+    let font_size = height_bound.min(width_bound).max(10.0);
+    let line_height = (font_size * 1.15).min((rect_height * 1.05).max(font_size));
 
     TextMetrics {
         font_size,
