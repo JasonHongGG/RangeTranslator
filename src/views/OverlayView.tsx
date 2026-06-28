@@ -266,10 +266,12 @@ export function OverlayView() {
         allowsTextSelection={allowsTextSelection}
       />
 
-      <OverlayDebugLayer
-        sourceUnits={sourceUnits}
-        geometryContext={geometryContext}
-      />
+      {snapshot.showOcrDebugBoxes && (
+        <OverlayDebugLayer
+          sourceUnits={sourceUnits}
+          geometryContext={geometryContext}
+        />
+      )}
     </div>
   )
 }

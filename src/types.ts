@@ -144,6 +144,7 @@ export type RuntimeSnapshot = {
   aiTranslationEnabled: boolean
   panelPinned: boolean
   debugScreenshotMode: boolean
+  showOcrDebugBoxes: boolean
   selection: SelectionRect | null
   selectorBounds: SelectionRect | null
   overlayMode: OverlayInteractionMode

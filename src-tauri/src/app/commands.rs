@@ -460,6 +460,25 @@ pub fn toggle_debug_screenshot_mode(
     Ok(())
 }
 
+#[tauri::command]
+pub fn toggle_show_ocr_debug_boxes(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let snapshot = state.set_show_ocr_debug_boxes(enabled);
+    emit_debug(
+        &app,
+        "panel-backend",
+        "show OCR debug boxes toggled",
+        json!({
+            "enabled": enabled,
+        }),
+    );
+    emit_snapshot(&app, &snapshot);
+    Ok(())
+}
+
 pub fn spawn_runtime_prewarm(app: &AppHandle, state: SharedState) {
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {

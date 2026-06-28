@@ -253,6 +253,12 @@ impl SharedState {
         inner.snapshot.clone()
     }
 
+    pub fn set_show_ocr_debug_boxes(&self, enabled: bool) -> RuntimeSnapshot {
+        let mut inner = self.inner.lock();
+        inner.snapshot.show_ocr_debug_boxes = enabled;
+        inner.snapshot.clone()
+    }
+
     pub fn set_languages(&self, source_language: String, target_language: String) -> RuntimeSnapshot {
         let mut inner = self.inner.lock();
         inner.snapshot.source_language = source_language;

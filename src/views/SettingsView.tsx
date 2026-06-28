@@ -251,6 +251,29 @@ export function SettingsView() {
             <div className="switch-thumb" />
           </div>
         </div>
+
+        <div
+          className="setting-toggle"
+          data-no-drag="true"
+          onClick={() => {
+            if (busy) return;
+            runCommand(() =>
+              call('toggle_show_ocr_debug_boxes', {
+                enabled: !snapshot.showOcrDebugBoxes,
+              }),
+            )
+          }}
+        >
+          <div className="setting-toggle-info">
+            <div className="setting-toggle-icon">
+              <FiEye size={18} />
+            </div>
+            <span className="setting-toggle-label">Show OCR Debug Boxes</span>
+          </div>
+          <div className={`switch ${snapshot.showOcrDebugBoxes ? 'active' : ''}`}>
+            <div className="switch-thumb" />
+          </div>
+        </div>
       </section>
     </main>
   )

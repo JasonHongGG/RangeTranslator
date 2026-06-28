@@ -110,6 +110,7 @@ fn main() {
             commands::stop_pipeline,
             commands::submit_selection,
             commands::toggle_debug_screenshot_mode,
+            commands::toggle_show_ocr_debug_boxes,
             commands::update_overlay_selection,
             commands::get_magnifier_region,
         ])
