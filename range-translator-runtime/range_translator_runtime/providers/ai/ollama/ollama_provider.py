@@ -33,6 +33,7 @@ class OllamaProvider(AIProvider):
         payload = {
             "model": model,
             "format": "json",
+            "stream": False,
             "keep_alive": self._keep_alive,
             "messages": messages,
             "options": {
