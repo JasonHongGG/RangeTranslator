@@ -31,6 +31,14 @@ pub fn set_capture_protection(app: &AppHandle, content_protected: bool) -> Resul
     for label in ["panel", "selector", "overlay", "settings"] {
         if let Some(window) = app.get_webview_window(label) {
             set_window_capture_protection(&window, content_protected)?;
+            
+            // WORKAROUND: Changing content protection on Windows resets extended window styles,
+            // dropping WS_EX_TRANSPARENT. We must re-apply the click-through state.
+            if label == "overlay" {
+                let state = app.state::<crate::state::SharedState>();
+                let interactive = state.snapshot().overlay_mode.is_interactive();
+                let _ = window.set_ignore_cursor_events(!interactive);
+            }
         }
     }
 
