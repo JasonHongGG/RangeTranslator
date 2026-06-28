@@ -7,7 +7,7 @@ import {
 } from 'react'
 import { call, currentTauriWindow, isTauri, watchEvent } from '../bridge'
 import { Tooltip } from '../components/Tooltip'
-import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, PREVIEW_SNAPSHOT, type DebugPayload, type ResizeDirection } from '../app/constants'
+import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, EMPTY_SNAPSHOT, type DebugPayload, type ResizeDirection } from '../app/constants'
 import { logDebugPayload } from '../app/debug'
 import { labelForStatus, shouldIgnoreWindowDrag, toneForStatus } from '../app/overlay'
 
@@ -21,7 +21,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import './PanelView.css';
 
 export function PanelView() {
-  const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
+  const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(EMPTY_SNAPSHOT)
   const [busy, setBusy] = useState(false)
   const panelWindow = useMemo(() => currentTauriWindow(), [])
   const { showNotification } = useNotification()

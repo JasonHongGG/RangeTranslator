@@ -73,10 +73,27 @@ impl SharedState {
 
     pub fn set_selection(&self, selection: SelectionRect) -> RuntimeSnapshot {
         let mut inner = self.inner.lock();
+        inner.pipeline_token = inner.pipeline_token.saturating_add(1);
         inner.snapshot.selection = Some(selection.clone());
         inner.snapshot.selector_bounds = None;
-        inner.translation.selection = Some(selection);
+        inner.snapshot.generation = inner.pipeline_token;
+        inner.snapshot.visible_layer = VisibleLayer::None;
+        inner.snapshot.block_count = 0;
+        inner.snapshot.last_updated = None;
+        inner.snapshot.last_detected_source = None;
         inner.snapshot.last_error = None;
+
+        inner.translation = TranslationPayload {
+            generation: inner.pipeline_token,
+            selection: Some(selection),
+            capture: None,
+            frame_id: String::new(),
+            source_language: inner.snapshot.source_language.clone(),
+            target_language: inner.snapshot.target_language.clone(),
+            visible_layer: VisibleLayer::None,
+            ..TranslationPayload::default()
+        };
+
         if inner.snapshot.running {
             inner.snapshot.status = RuntimeStatus::Capturing;
             inner.snapshot.status_detail = "Live".to_string();

@@ -9,7 +9,7 @@ import { call, currentTauriWindow, isTauri, watchEvent } from '../bridge'
 import { Tooltip } from '../components/Tooltip'
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from '../languages'
 import { CompactSelect } from '../components/CompactSelect'
-import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, PREVIEW_SNAPSHOT, type DebugPayload, type ResizeDirection } from '../app/constants'
+import { DEBUG_EVENT, PANEL_RESIZE_HANDLES, EMPTY_SNAPSHOT, type DebugPayload, type ResizeDirection } from '../app/constants'
 import { logDebugPayload } from '../app/debug'
 import { shouldIgnoreWindowDrag } from '../app/overlay'
 
@@ -19,7 +19,7 @@ import type { OverlayInteractionMode, RuntimeSnapshot } from '../types'
 import { useNotification } from '../components/NotificationProvider'
 
 export function SettingsView() {
-  const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
+  const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(EMPTY_SNAPSHOT)
   const [busy, setBusy] = useState(false)
   const settingsWindow = useMemo(() => currentTauriWindow(), [])
   const { showNotification } = useNotification()

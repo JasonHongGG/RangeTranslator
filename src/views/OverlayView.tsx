@@ -9,9 +9,9 @@ import {
 } from 'react'
 import { call, currentTauriWindow, isTauri, watchEvent } from '../bridge'
 import {
+  EMPTY_SNAPSHOT,
+  EMPTY_TRANSLATION,
   PANEL_RESIZE_HANDLES,
-  PREVIEW_SNAPSHOT,
-  PREVIEW_TRANSLATION,
   type ResizeDirection,
 } from '../app/constants'
 import { formatUnknown, writeLocalDebug } from '../app/debug'
@@ -34,11 +34,11 @@ import { OverlayMaskLayer } from './overlay/MaskLayer'
 import { OverlayTextLayer } from './overlay/TextLayer'
 
 export function OverlayView() {
-  const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
-  const [translation, setTranslation] = useState<TranslationPayload>(PREVIEW_TRANSLATION)
+  const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(EMPTY_SNAPSHOT)
+  const [translation, setTranslation] = useState<TranslationPayload>(EMPTY_TRANSLATION)
   const deferredTranslation = useDeferredValue(translation)
   const overlayWindow = useMemo(() => currentTauriWindow(), [])
-  const boundsRef = useRef<SelectionRect | null>(PREVIEW_SNAPSHOT.selection)
+  const boundsRef = useRef<SelectionRect | null>(snapshot.selection)
   const overlayBoundsSyncArmedRef = useRef(false)
   const overlayViewport = {
     width: Math.max(window.innerWidth, 1),
