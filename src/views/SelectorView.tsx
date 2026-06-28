@@ -309,11 +309,6 @@ export function SelectorView() {
         anchorRef.current = point
         setAnchor(point)
         setCurrent(point)
-        if (selectorWindow) {
-          void selectorWindow.setFocus().catch(() => {
-            window.focus()
-          })
-        }
         event.currentTarget.setPointerCapture(event.pointerId)
         writeLocalDebug('selector-ui', 'pointerdown accepted', {
           point,
@@ -385,9 +380,6 @@ export function SelectorView() {
         }
 
         dragMoveLoggedRef.current = false
-        anchorRef.current = null
-        setAnchor(null)
-        setCurrent(null)
         void submitSelection(nextSelection)
       }}
       onPointerCancel={(event) => {
@@ -443,7 +435,6 @@ export function SelectorView() {
           inset: 0,
           backgroundColor: 'rgba(0, 0, 0, 0.3)',
           pointerEvents: 'none',
-          transition: 'opacity 0.2s',
           opacity: isSelecting ? 0 : 1
         }} 
       />
