@@ -231,6 +231,7 @@ pub async fn submit_selection(
     };
 
     windows::hide_window(&app, "selector");
+    windows::show_window(&app, "panel");
 
     let content_protected = !snapshot_before.debug_screenshot_mode;
     windows::ensure_overlay_window(
@@ -295,6 +296,7 @@ pub fn clear_selection(app: AppHandle, state: State<'_, SharedState>) -> Result<
     if let Some(_window) = app.get_webview_window("selector") {
         windows::hide_window(&app, "selector");
     }
+    windows::show_window(&app, "panel");
 
     let snapshot = state.clear_selection();
     emit_snapshot(&app, &snapshot);

@@ -242,6 +242,10 @@ pub async fn open_selector_window(app: &AppHandle, state: SharedState) -> Result
         }),
     );
     emit_snapshot(app, &snapshot);
+
+    hide_window(app, "panel");
+    hide_window(app, "settings");
+
     Ok(())
 }
 
@@ -265,6 +269,7 @@ pub fn close_selector_window(app: &AppHandle, state: SharedState) -> Result<(), 
     );
     emit_snapshot(app, &snapshot);
     hide_window(app, "selector");
+    show_window(app, "panel");
     Ok(())
 }
 
@@ -382,6 +387,18 @@ pub fn hide_window(app: &AppHandle, label: &str) {
     let _ = app.run_on_main_thread(move || {
         if let Some(window) = app_handle.get_webview_window(&window_label) {
             let _ = window.hide();
+        }
+    });
+}
+
+pub fn show_window(app: &AppHandle, label: &str) {
+    let app_handle = app.clone();
+    let window_label = label.to_string();
+
+    let _ = app.run_on_main_thread(move || {
+        if let Some(window) = app_handle.get_webview_window(&window_label) {
+            let _ = window.show();
+            let _ = window.set_focus();
         }
     });
 }
