@@ -1,189 +1,38 @@
 # RangeTranslator
 
-RangeTranslator is a Tauri desktop app for selecting a screen region, running OCR on that region, translating the recognized text, and rendering the result back into a transparent overlay window.
+RangeTranslator is a desktop application that allows you to select a region on your screen, run Optical Character Recognition (OCR) to extract text, translate it, and render the translated text directly back over the original text using a transparent overlay.
 
-This codebase now uses a provider-driven runtime shape:
+## Features
 
-- Rust/Tauri owns capture orchestration, window lifecycle, runtime state, and overlay events.
-- OCR and AI implementations live behind a persistent Python sidecar.
-- The sidecar currently owns the active PaddleOCR GPU runtime and the Ollama translation provider.
-- Prompt text is no longer embedded in Rust code; prompts live as external assets.
+- **Screen Region Selection**: Select any part of your screen to translate.
+- **In-place Translation Overlay**: The translated text replaces the original text seamlessly on a transparent overlay.
+- **AI-Powered Translation**: Leverages AI models via Ollama to provide natural, context-aware translations that read smoothly (not just literal word-for-word translations).
+- **Allow Screenshot Mode**: Temporarily bypasses screenshot protection, allowing you to capture the translation overlay with system tools.
 
-## Runtime Architecture
+## Keyboard Shortcuts (Hotkeys)
 
-Core Rust modules:
+The application supports the following hotkeys (make sure the main panel is focused):
 
-- `src-tauri/src/app/`: Tauri command surface, selector/overlay lifecycle, event emission, and pipeline orchestration
-- `src-tauri/src/sidecar/`: persistent sidecar worker lifecycle, JSON-lines RPC, runtime discovery, and retry logic
-- `src-tauri/src/benchmark/`: prompt benchmark suite loading and execution
-- `src-tauri/src/state/`: shared runtime snapshot and latest translation state
-- `src-tauri/src/models.rs`: provider-neutral runtime, OCR, AI, benchmark, and partial-update contracts
+- **`Ctrl + Shift + S`** (or `Cmd + Shift + S`): Open the screen selector to select a region.
+- **`Ctrl + Enter`** (or `Cmd + Enter`): Start or Stop the real-time translation pipeline.
+- **`Ctrl + Backspace`** (or `Cmd + Backspace`): Clear the current selection.
+- **`Ctrl + Shift + D`** (or `Cmd + Shift + D`): Toggle "Allow Screenshot" mode (toggles window capture protection).
+- **`Esc`**: Cancel and close the screen selector (when the selector is open).
 
-The live overlay contract is source-anchored: OCR produces `sourceUnits` that own
-the original text positions, colors, and masking rectangles, while AI produces
-`translationUnits` keyed by `sourceId`. Translation output is never allowed to
-fall back to OCR text. If a model omits, merges, reorders, or mislabels an item,
-that item is marked missing/failed and the original screen text remains masked.
-Overlapping OCR lines with the same text are canonicalized before translation so
-duplicate detections do not get sent to the model as if they were separate source
-regions.
+## Setup & Requirements
 
-Frontend modules:
+1. **Ollama**: Ensure Ollama is running (locally or remotely). This app relies on Ollama for translation. Models designed for quick inference like `qwen3` are recommended.
+2. **GPU (Recommended)**: For the best real-time OCR performance, a dedicated GPU is highly recommended. The backend utilizes PaddleOCR with GPU support (`paddlepaddle-gpu` cu129).
 
-- `src/views/`: dedicated panel, selector, and overlay views
-- `src/app/`: routing, preview data, debug helpers, and overlay utility functions
-- `src/ui/`: shared icon components
+## Known Issues & Troubleshooting
 
-Sidecar runtime:
+Here are some special cases and known behaviors to be aware of:
 
-- `range-translator-runtime/range_translator_runtime/app/`: runtime application dispatch and service wiring
-- `range-translator-runtime/range_translator_runtime/providers/`: AI provider implementations and OCR provider interfaces
-- `range-translator-runtime/range_translator_runtime/prompts/`: prompt repository and prompt rendering helpers
-- `range-translator-runtime/prompts/`: external prompt profiles
-- `benchmarks/`: benchmark corpus for prompt and provider evaluation
-
-Translate call logging:
-
-- Each sidecar `translate` call now writes a dedicated JSON record under `range-translator-runtime/.runtime/ai-log/`
-- Filenames follow `yyyymmdd_hhmmss_translate_<random>.json`
-- Each record contains `metadata`, `request`, and `response`, including the normalized request payload, actual Ollama chat bodies, raw model outputs, streamed partial events, final parsed result, and error traceback when a call fails
-
-## Provider Model
-
-Current provider setup:
-
-- OCR provider: `paddleocr` via sidecar
-- AI provider: `ollama` via sidecar
-- Default prompt profile: `translation.ui_overlay.default`
-
-The app keeps OCR and AI concerns provider-neutral at the contract layer so implementations can change without rewriting overlay logic. The Python sidecar owns provider defaults plus the actual OCR/translation implementations.
-
-## Prompt Assets
-
-Prompts are stored as JSON assets under `range-translator-runtime/prompts/`.
-
-Each prompt profile includes:
-
-- `id`
-- `version`
-- `label`
-- `task`
-- `providerFamily`
-- `system`
-- `userTemplate`
-- `outputSchema`
-
-The sidecar loads and validates prompt profiles at runtime, and the Rust app only passes `promptProfile` identifiers through provider-neutral request contracts.
-
-## Benchmarks
-
-Benchmark suites live under `benchmarks/`.
-
-The current default suite is:
-
-- `benchmarks/ui_overlay.translation_suite.json`
-
-This suite is intended to support prompt research and provider comparison using repeatable OCR translation samples. Cases use id-based source items so prompt changes are checked against the same per-OCR-region alignment rule used by the live overlay.
-
-## Environment Overrides
-
-The sidecar runtime supports these environment variables:
-
-- `RANGE_TRANSLATOR_RUNTIME_DIR`: explicit path to the sidecar runtime root
-- `RANGE_TRANSLATOR_PYTHON`: explicit Python executable for the sidecar
-- `RANGE_TRANSLATOR_PROMPT_DIR`: explicit path to prompt assets
-- `RANGE_TRANSLATOR_BENCHMARK_DIR`: explicit path to benchmark suites
-- `RANGE_TRANSLATOR_AI_LOG_DIR`: optional override for the translate AI log directory
-- `RANGE_TRANSLATOR_OLLAMA_TAGS_TIMEOUT_SECONDS`: override the Ollama `/api/tags` discovery timeout in the sidecar
-- `RANGE_TRANSLATOR_OLLAMA_CHAT_TIMEOUT_SECONDS`: override the Ollama `/api/chat` timeout in the sidecar
-- `RANGE_TRANSLATOR_OLLAMA_KEEP_ALIVE`: override the Ollama model keep-alive sent by the sidecar
-
-## Development Setup
-
-Install frontend dependencies:
-
-```bash
-npm install
-```
-
-Prepare the Python runtime if you want a bundled local interpreter for the sidecar:
-
-```bash
-cd range-translator-runtime
-py -3.12 -m venv .venv
-./.venv/Scripts/python.exe -m pip install --upgrade pip setuptools wheel
-./.venv/Scripts/python.exe -m pip install paddlepaddle-gpu==3.2.2 -i https://www.paddlepaddle.org.cn/packages/stable/cu129/
-./.venv/Scripts/python.exe -m pip install -e .
-```
-
-Notes:
-
-- The validated Windows GPU path on this machine is the official Paddle `cu129` wheel channel plus `paddleocr 3.5.x`; older `paddlepaddle-gpu 2.6.2` / `paddleocr 2.10.0` wheels do not support this RTX 5070 Laptop GPU.
-- The sidecar is GPU-only for OCR. If the Paddle GPU runtime is unavailable, startup should fail fast instead of falling back to CPU.
-- Paddle model downloads are redirected into `range-translator-runtime/.runtime/paddlex`.
-
-## Pitfalls And Fixes
-
-The following issues already happened in this repo and should be treated as hard-earned constraints, not optional cleanup notes.
-
-- Windows Paddle GPU setup on this machine must use the official `paddlepaddle-gpu 3.2.2` `cu129` channel together with `paddleocr 3.5.x`. Older Windows wheels such as `2.6.2` report GPU compute capability `12.0` as unsupported on the RTX 5070 Laptop GPU.
-- Do not reintroduce CPU fallback for OCR. If the sidecar cannot load a supported Paddle GPU runtime, it should surface an explicit error and stop there.
-- The Python sidecar must bootstrap all required cu12 wheel DLL directories, not only `cudnn/cublas/cuda_runtime/cuda_nvrtc`. The working set here also includes `cufft`, `curand`, `cusolver`, `cusparse`, and `nvjitlink`.
-- Keep PaddleX model cache inside `range-translator-runtime/.runtime/paddlex` via `PADDLE_PDX_CACHE_HOME`. Leaving it under the user profile cache makes runtime ownership blurry and makes debugging which model set is actually in use much harder.
-- Selector window creation must stay on the async command path and use a `run_on_main_thread` callback. A blocking selector command that waits synchronously around window build can hang before `build()` returns.
-- In dev mode, do not let the app resolve `src-tauri/target/debug/range-translator-runtime` ahead of the workspace-root `range-translator-runtime`. That copied debug runtime can keep an old `.venv` and silently resurrect stale Paddle wheels even after the real runtime has already been upgraded.
-- When the workspace-root runtime is selected in dev mode, remove any leftover `src-tauri/target/debug/range-translator-runtime` copy. Leaving the old copy in place invites the next regression because people forget it exists and start debugging the wrong environment again.
-- `tauri dev` must not bundle or watch the full sidecar runtime tree. If dev mode merges the production `bundle.resources` config, Cargo starts tracking `.venv` and `.runtime` churn while Vite also sees copied runtime files under `src-tauri/target/debug`, which leads to rebuild/reload loops and can present as a blank white app window.
-- Selection commit must not be gated on sidecar readiness checks. The correct order is: commit the selected region, ensure/show the overlay window, hide the selector immediately, then start sidecar capability/OCR readiness work. If sidecar readiness is checked first and it blocks or fails, the visible symptom is exactly what happened here: the selector stays open and no overlay appears.
-- Closing the selector should hide it immediately and only then perform the delayed `close()`. Relying only on delayed close can leave a full-screen always-on-top selector window covering the overlay even when the backend flow already moved on.
-- The selector/overlay flow is a window-management responsibility owned by Rust/Tauri, not by OCR provider startup. Keep these concerns separated when refactoring.
-- Auto OCR cannot eagerly initialize every fallback recognition family on the first pass. For this app that creates the exact post-selector stall seen in logs. Prefer the most likely models first and stop as soon as one high-confidence candidate succeeds.
-- Showing OCR as the waiting state is fine, but only if every app-owned window that can overlap the capture region is excluded from capture. Without capture protection, the overlay/panel/selector can feed their own text back into OCR and create the repeated OCR/AI loop seen earlier.
-- For `qwen3` on Ollama, realtime overlay translation must send `think:false`. On this repo's endpoint, leaving thinking enabled pushed the same structured translation request from roughly 1.1s to roughly 9s with no quality benefit for the overlay use case.
-- Overlay interaction should default to edit mode. Keep `copy_mode` enabled by default and do not silently force it back to passive mode during normal pipeline start/stop/clear transitions unless the user explicitly toggles modes.
-- If live status stays stuck on `Sampling` after the visible screen content changes, treat frame-difference sensitivity as the first suspect. The earlier 8x8 luminance signature plus a large total-delta threshold was too blunt for small localized text updates.
-- Multi-line overlay text must stay top-aligned inside each OCR rect. Using a flex container with vertical centering makes translated multi-line blocks visually drift away from the original capture position even when the OCR rectangles are otherwise correct.
-- This repo now has a dedicated debug screenshot mode. When enabled, panel/selector/overlay temporarily disable `set_content_protected(...)` so normal system screenshots can capture the UI, and live pipeline start is intentionally blocked to avoid reintroducing OCR self-feedback while capture protection is off.
-- Sidecar stderr on Windows cannot be assumed to be valid UTF-8. Decode it lossily when piping it back into Rust logs, otherwise useful diagnostics get replaced by a misleading `failed to read sidecar stderr: stream did not contain valid UTF-8` message.
-- Sidecar stdout is reserved for JSON-RPC frames only. `paddle.utils.run_check()` prints `Running verify PaddlePaddle program ...` to stdout, so provider-side GPU validation must capture that output instead of letting it leak into the transport and break response parsing.
-- Remote Ollama behind ngrok is not equivalent to a local `127.0.0.1` server. In this repo we verified that `/api/tags` can succeed while both `/api/chat` and `/api/generate` fail to emit even response headers for minutes. Client-side batching and `keep_alive` reduce avoidable overhead, but they do not fix a remote inference server or tunnel that is not actually returning generation responses. Keep the chat timeout configurable, fail with an explicit server-side inference warning, and debug the remote Ollama host itself when metadata works but generation never starts.
-- A successful `discovering` flow depends on the sidecar choosing the right model, not just any available model. We verified on this endpoint that Python `urllib` and the current structured prompt both work when the provider uses `qwen3:8b`, while the old discovery priority incorrectly preferred `mistral-small3.2:latest`. Keep realtime-safe models such as `qwen3:8b` at the front of the sidecar preference list.
-- When a remote Ollama endpoint stalls, do not hammer it every frame. This pipeline now enters a short AI retry cooldown while keeping original text masked and surfacing a concise warning in the runtime snapshot instead of spamming the same full traceback on every capture cycle.
-- Overlay translation must stay source-anchored. The AI provider may receive full context for quality, but its response must return exactly one item for every OCR source unit with the same `id` and `index`. Do not reintroduce position-only `translations[]` arrays or any fallback that copies OCR source text into translation output.
-- OCR canonicalization in the Rust pipeline should only merge duplicate lines when both text and geometry overlap strongly. Do not collapse same-text labels that appear in different places on screen.
-- The overlay geometry path is now tied to capture metadata. Treat selection bounds as physical pixels, convert them to logical coordinates only for the screenshots crate call, and normalize OCR rectangles back into selection-relative physical pixels before the frontend renders them.
-- The default overlay prompt should use the ordered OCR item list as its single shared context. Do not feed the model a second full-text copy of the same source content unless you also add a clear regression test for duplicate-phrase contamination.
-- Every translate call should leave behind an auditable JSON record in `.runtime/ai-log`. Logging failure must never crash the runtime, but a successful call path should normally produce one file per translate request.
-- Frontend route resolution and view bootstrap must not assume `getCurrentWindow()` is always synchronously available during initial render. If that access throws before React mounts the view tree, the visible symptom is a blank white window with no panel UI.
-
-Run the frontend and Tauri app:
-
-```bash
-npm run tauri dev
-```
-
-## Validation Commands
-
-Frontend build:
-
-```bash
-npm run build
-```
-
-Rust/Tauri compile check:
-
-```bash
-npm run tauri:check
-```
-
-## Current Scope
-
-The current implementation includes:
-
-- OCR provider abstraction in Rust
-- sidecar-based AI invocation pathway
-- external prompt assets
-- prompt benchmark asset loading
-- partial translation event flow to the overlay frontend
-
-Follow-up implementation work is still expected for richer OCR providers, stronger prompt evaluation tooling, and broader runtime status UI, but the provider-driven foundation is now in place.
+- **Screenshot Tool Blocking (Click-through Issue)**:
+  By default, the application protects its windows from being captured by screenshot tools to prevent an infinite loop where the OCR reads its own translated text. Enabling "Allow Screenshot" mode removes this protection. On Windows, changing this setting dynamically could cause the invisible overlay to lose its "click-through" property, mistakenly blocking mouse clicks on underlying apps (like the Snipping Tool or File Explorer). *This issue has been patched*, but if you experience any lingering click-blocking, toggling the "Allow Screenshot" setting again or clearing the selection will reset the window state.
+- **Remote Ollama Timeout Issues**:
+  If you are connecting to a remote Ollama instance (e.g., via ngrok), network latency or tunnel restrictions might cause the translation to hang. If translation stays stuck but the connection tests pass, check the remote server's response time or switch to a local Ollama instance.
+- **AI "Thinking" Overhead**:
+  When using reasoning models (like `qwen3`), the app explicitly disables the AI's internal "thinking" steps (`think: false`). This is intentional, as generating thought processes significantly delays real-time UI overlay translation (from ~1s to ~9s) without providing noticeable quality improvements for short text and UI labels.
+- **GPU Compatibility**:
+  If the application fails to run OCR, it might be due to missing CUDA libraries or unsupported PaddleOCR wheels. Ensure you have the correct CUDA 12.x dependencies for your specific GPU architecture (e.g., RTX 50-series requires the latest `cu129` wheels).
