@@ -11,7 +11,7 @@ export const PREVIEW_SNAPSHOT: RuntimeSnapshot = {
   aiTranslationEnabled: true,
   panelPinned: true,
   debugScreenshotMode: false,
-  selection: { x: 280, y: 180, width: 764, height: 312 },
+  selection: null,
   selectorBounds: { x: 0, y: 0, width: 1280, height: 720 },
   overlayMode: 'selectText',
   generation: 0,
