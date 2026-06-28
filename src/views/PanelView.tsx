@@ -16,12 +16,16 @@ import { RiPushpinLine, RiPushpinFill } from "react-icons/ri";
 
 import type { RuntimeSnapshot } from '../types'
 import { useNotification } from '../components/NotificationProvider'
+import { motion, AnimatePresence } from 'framer-motion';
+
+import './PanelView.css';
 
 export function PanelView() {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(PREVIEW_SNAPSHOT)
   const [busy, setBusy] = useState(false)
   const panelWindow = useMemo(() => currentTauriWindow(), [])
   const { showNotification } = useNotification()
+  const [isHoveredSelect, setIsHoveredSelect] = useState(false);
 
   const applySnapshot = useEffectEvent((next: RuntimeSnapshot) => {
     startTransition(() => {
@@ -78,9 +82,7 @@ export function PanelView() {
     }
   }, [])
 
-  const selectionLabel = snapshot.selection
-    ? `${snapshot.selection.width} x ${snapshot.selection.height}`
-    : 'Set Region'
+  const hasSelection = !!snapshot.selection;
   const statusTone = toneForStatus(snapshot.status)
 
   const runCommand = async (action: () => Promise<void>) => {
@@ -146,8 +148,6 @@ export function PanelView() {
       return
     }
 
-
-
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'd') {
       event.preventDefault()
       void runCommand(() =>
@@ -182,7 +182,7 @@ export function PanelView() {
   }, [])
 
   return (
-    <main className="panel-window" onPointerDown={startDrag} data-tauri-drag-region>
+    <main className="panel-v2-window" onPointerDown={startDrag} data-tauri-drag-region>
       {PANEL_RESIZE_HANDLES.map((handle) => (
         <button
           key={handle.direction}
@@ -193,17 +193,18 @@ export function PanelView() {
         ></button>
       ))}
 
-      <header className="panel-header">
-        <div className="status-indicator" data-no-drag="true">
-          <div className={`status-dot ${statusTone === 'danger' ? 'danger' : ''}`}></div>
-          <span>{labelForStatus(snapshot.status)}</span>
+      {/* Elegant Header with Glassmorphism */}
+      <header className="panel-v2-header">
+        <div className="v2-status-indicator" data-no-drag="true">
+          <div className={`v2-status-dot ${statusTone === 'danger' ? 'danger' : ''}`}></div>
+          <span className="v2-status-text">{labelForStatus(snapshot.status)}</span>
         </div>
 
-        <div className="window-controls" data-no-drag="true">
+        <div className="v2-window-controls" data-no-drag="true">
           <Tooltip content="Settings" position="bottom">
             <button
               type="button"
-              className="window-btn"
+              className="v2-window-btn"
               onClick={() => runCommand(() => call('open_settings_window'))}
             >
               <FiSettings size={14} />
@@ -212,7 +213,7 @@ export function PanelView() {
           <Tooltip content={snapshot.panelPinned ? "Unpin Window" : "Pin Window"} position="bottom">
             <button
               type="button"
-              className={`window-btn ${snapshot.panelPinned ? 'active' : ''}`}
+              className={`v2-window-btn ${snapshot.panelPinned ? 'active' : ''}`}
               disabled={busy}
               onClick={() =>
                 runCommand(() =>
@@ -230,7 +231,7 @@ export function PanelView() {
           <Tooltip content="Minimize" position="bottom">
             <button
               type="button"
-              className="window-btn"
+              className="v2-window-btn"
               onClick={() => runCommand(() => call('panel_minimize'))}
             >
               <FiMinus size={14} />
@@ -239,7 +240,7 @@ export function PanelView() {
           <Tooltip content="Close" position="bottom">
             <button
               type="button"
-              className="window-btn danger"
+              className="v2-window-btn danger"
               onClick={() => runCommand(() => call('panel_close'))}
             >
               <FiX size={14} />
@@ -248,48 +249,111 @@ export function PanelView() {
         </div>
       </header>
 
-      <section className="center-stage" data-tauri-drag-region>
-
-
-        <div className="core-action-group">
-          <button
-            type="button"
-            className={`play-btn ${snapshot.running ? 'running' : ''}`}
-            data-no-drag="true"
-            disabled={busy || (!snapshot.running && !snapshot.selection)}
-            onClick={() =>
-              runCommand(() =>
-                call(snapshot.running ? 'stop_pipeline' : 'start_pipeline', {
-                  settings: { sourceLanguage: snapshot.sourceLanguage, targetLanguage: snapshot.targetLanguage },
-                }),
-              )
-            }
-          >
-            {snapshot.running ? <FiPause /> : <FiPlay />}
-          </button>
-
-          <div className="secondary-actions">
-            <button
-              type="button"
-              className={`region-pill ${snapshot.selection ? 'active' : ''}`}
-              data-no-drag="true"
-              disabled={busy}
-              onClick={() => {
-                if (snapshot.selection) {
-                  runCommand(() => call('clear_selection'))
-                } else {
-                  runCommand(() => call('open_selector_window'))
-                }
-              }}
+      {/* Center Stage with Framer Motion */}
+      <section className="v2-center-stage" data-tauri-drag-region>
+        <AnimatePresence mode="wait">
+          {!hasSelection ? (
+            <motion.div
+              key="select-mode"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.3 }}
+              className="v2-select-mode"
             >
-              {snapshot.selection ? <FiX size={14} /> : <FiCrop size={14} />}
-              <span>{selectionLabel}</span>
-            </button>
-          </div>
-        </div>
+              {/* Elegant pulsing aura for select action */}
+              <div 
+                className="v2-select-portal"
+                onMouseEnter={() => setIsHoveredSelect(true)}
+                onMouseLeave={() => setIsHoveredSelect(false)}
+                data-no-drag="true"
+              >
+                {/* Rotating gradient background */}
+                <motion.div 
+                  animate={{ rotate: 360, scale: isHoveredSelect ? 1.1 : 1, opacity: isHoveredSelect ? 0.7 : 0.3 }}
+                  transition={{ rotate: { duration: 15, repeat: Infinity, ease: "linear" }, scale: { duration: 0.5 }, opacity: { duration: 0.5 } }}
+                  className="v2-aura-layer-1"
+                />
+                <motion.div 
+                  animate={{ rotate: -360, scale: isHoveredSelect ? 1.05 : 0.9, opacity: isHoveredSelect ? 0.5 : 0.2 }}
+                  transition={{ rotate: { duration: 20, repeat: Infinity, ease: "linear" }, scale: { duration: 0.5 }, opacity: { duration: 0.5 } }}
+                  className="v2-aura-layer-2"
+                />
+                
+                {/* Main Button */}
+                <motion.button
+                  className="v2-select-btn"
+                  onClick={() => runCommand(() => call('open_selector_window'))}
+                  animate={{
+                    scale: isHoveredSelect ? 1.05 : 1,
+                    boxShadow: isHoveredSelect 
+                      ? '0 10px 30px rgba(59, 130, 246, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.4)' 
+                      : '0 8px 24px rgba(0, 0, 0, 0.05), inset 0 0 0 1px rgba(255, 255, 255, 0.2)'
+                  }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <FiCrop size={32} className="v2-select-icon" />
+                </motion.button>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="play-mode"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.4, type: "spring", stiffness: 300, damping: 25 }}
+              className="v2-play-mode"
+            >
+              {/* Central Play/Pause Action */}
+              <motion.button
+                type="button"
+                className={`v2-play-action-btn ${snapshot.running ? 'running' : ''}`}
+                data-no-drag="true"
+                disabled={busy}
+                onClick={() =>
+                  runCommand(() =>
+                    call(snapshot.running ? 'stop_pipeline' : 'start_pipeline', {
+                      settings: { sourceLanguage: snapshot.sourceLanguage, targetLanguage: snapshot.targetLanguage },
+                    }),
+                  )
+                }
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                {snapshot.running ? <FiPause size={36} /> : <FiPlay size={36} />}
+              </motion.button>
+
+              {/* Selection Pill */}
+              <motion.div 
+                className="v2-selection-pill"
+                data-no-drag="true"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2, duration: 0.3 }}
+              >
+                <div className="v2-pill-info">
+                  <FiCrop size={14} className="v2-pill-icon" />
+                  <span className="v2-pill-text">{snapshot.selection?.width} x {snapshot.selection?.height}</span>
+                </div>
+                <div className="v2-pill-actions">
+                  <Tooltip content="Reselect" position="top">
+                    <button className="v2-pill-action-btn" onClick={() => runCommand(() => call('open_selector_window'))}>
+                      <FiCrop size={12} />
+                    </button>
+                  </Tooltip>
+                  <div className="v2-pill-divider" />
+                  <Tooltip content="Clear" position="top">
+                    <button className="v2-pill-action-btn danger" onClick={() => runCommand(() => call('clear_selection'))}>
+                      <FiX size={12} />
+                    </button>
+                  </Tooltip>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </section>
-
-
     </main>
   )
 }
