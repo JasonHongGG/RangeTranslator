@@ -14,7 +14,6 @@ pub struct OverlayFrameContext {
     pub detected_source: Option<String>,
     pub captured_at: Option<String>,
     pub provider: String,
-    pub prompt_profile: String,
 }
 
 impl OverlayFrameContext {
@@ -29,7 +28,6 @@ impl OverlayFrameContext {
         detected_source: Option<String>,
         captured_at: Option<String>,
         provider: String,
-        prompt_profile: String,
     ) -> Self {
         Self {
             generation,
@@ -41,7 +39,6 @@ impl OverlayFrameContext {
             detected_source,
             captured_at,
             provider,
-            prompt_profile,
         }
     }
 }
@@ -82,7 +79,6 @@ impl OverlayFrameScene {
             unchanged: false,
             visible_layer: self.resolved_visible_layer(),
             provider: self.context.provider.clone(),
-            prompt_profile: self.context.prompt_profile.clone(),
             source_units: self.source_units.clone(),
             translation_units: self.translation_units.clone(),
         }
@@ -100,7 +96,6 @@ impl OverlayFrameScene {
             captured_at: self.context.captured_at.clone(),
             visible_layer: self.resolved_visible_layer(),
             provider: self.context.provider.clone(),
-            prompt_profile: self.context.prompt_profile.clone(),
             stage,
             complete,
             source_units: self.source_units.clone(),
@@ -149,7 +144,6 @@ mod tests {
             Some("en-US".to_string()),
             Some("2026-06-02T12:00:00.000Z".to_string()),
             "ollama".to_string(),
-            "translation.ui_overlay.default".to_string(),
         )
     }
 

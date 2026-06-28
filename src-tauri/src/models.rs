@@ -148,7 +148,6 @@ pub struct TranslationPayload {
     pub unchanged: bool,
     pub visible_layer: VisibleLayer,
     pub provider: String,
-    pub prompt_profile: String,
     pub source_units: Vec<OverlaySourceUnit>,
     pub translation_units: Vec<OverlayTranslationUnit>,
 }
@@ -167,7 +166,6 @@ impl Default for TranslationPayload {
             unchanged: false,
             visible_layer: VisibleLayer::None,
             provider: String::new(),
-            prompt_profile: String::new(),
             source_units: Vec::new(),
             translation_units: Vec::new(),
         }
@@ -187,7 +185,6 @@ pub struct TranslationPartialPayload {
     pub captured_at: Option<String>,
     pub visible_layer: VisibleLayer,
     pub provider: String,
-    pub prompt_profile: String,
     pub stage: PartialUpdateStage,
     pub complete: bool,
     pub source_units: Vec<OverlaySourceUnit>,
@@ -204,25 +201,15 @@ pub struct ProviderDescriptor {
     pub detail: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct PromptProfileDescriptor {
-    pub id: String,
-    pub label: String,
-    pub version: String,
-    pub task: String,
-    pub provider_family: String,
-}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeCapabilities {
     pub ocr_providers: Vec<ProviderDescriptor>,
     pub ai_providers: Vec<ProviderDescriptor>,
-    pub prompt_profiles: Vec<PromptProfileDescriptor>,
     pub default_ocr_provider_id: Option<String>,
     pub default_ai_provider_id: Option<String>,
-    pub default_prompt_profile_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -231,7 +218,6 @@ pub struct AiTranslationRequest {
     pub endpoint: String,
     pub provider_id: String,
     pub model: String,
-    pub prompt_profile: String,
     pub source_language: String,
     pub target_language: String,
     pub expected_item_count: usize,
@@ -293,7 +279,6 @@ pub struct OcrRecognitionResponse {
 pub struct AiTranslationResponse {
     pub provider_id: String,
     pub model: String,
-    pub prompt_profile: String,
     pub detected_source: String,
     pub items: Vec<AiTranslationItem>,
 }
@@ -314,7 +299,6 @@ pub struct AiTranslationDelta {
     pub index: usize,
     pub provider_id: String,
     pub model: String,
-    pub prompt_profile: String,
     pub detected_source: Option<String>,
     pub translated_text: String,
     pub confidence: Option<f32>,
@@ -330,7 +314,6 @@ pub struct BenchmarkCase {
     pub target_language: String,
     pub items: Vec<BenchmarkTextItem>,
     pub expected_items: Vec<BenchmarkExpectedItem>,
-    pub prompt_profile: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -360,7 +343,6 @@ pub struct BenchmarkSuite {
 #[serde(rename_all = "camelCase")]
 pub struct BenchmarkCaseResult {
     pub case_id: String,
-    pub prompt_profile: String,
     pub provider_id: String,
     pub expected_translations: Vec<String>,
     pub actual_translations: Vec<String>,
@@ -373,7 +355,6 @@ pub struct BenchmarkCaseResult {
 pub struct BenchmarkReport {
     pub suite_id: String,
     pub provider_id: String,
-    pub prompt_profile: String,
     pub case_count: usize,
     pub average_exact_match_score: f32,
     pub average_latency_ms: f32,
@@ -390,7 +371,6 @@ pub struct RuntimeSnapshot {
     pub target_language: String,
     pub ocr_provider: String,
     pub ai_provider: String,
-    pub prompt_profile: String,
     pub ai_translation_enabled: bool,
     pub panel_pinned: bool,
     pub debug_screenshot_mode: bool,
@@ -424,7 +404,6 @@ impl Default for RuntimeSnapshot {
             target_language: "zh-TW".to_string(),
             ocr_provider: String::new(),
             ai_provider: String::new(),
-            prompt_profile: String::new(),
             ai_translation_enabled: true,
             panel_pinned: true,
             debug_screenshot_mode: false,

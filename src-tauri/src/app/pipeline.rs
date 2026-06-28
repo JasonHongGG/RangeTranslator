@@ -166,13 +166,11 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             } else {
                 recognized.provider_id.clone()
             },
-            snapshot.prompt_profile.clone(),
         );
 
         let provider_snapshot = state.set_provider_stack(
             recognized.provider_id.clone(),
             snapshot.ai_provider.clone(),
-            snapshot.prompt_profile.clone(),
         );
         emit_snapshot(&app, &provider_snapshot);
 
@@ -276,7 +274,6 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                         detected_source: delta.detected_source.clone(),
                         captured_at: Some(state::timestamp()),
                         provider: delta.provider_id.clone(),
-                        prompt_profile: delta.prompt_profile.clone(),
                         ..partial_context.clone()
                     },
                     source_units_for_partial.clone(),
@@ -294,7 +291,6 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             endpoint: snapshot.endpoint.clone(),
             provider_id: snapshot.ai_provider.clone(),
             model: snapshot.model.clone(),
-            prompt_profile: snapshot.prompt_profile.clone(),
             source_language: recognized.language.clone(),
             target_language: snapshot.target_language.clone(),
             expected_item_count: ai_items.len(),
@@ -310,7 +306,6 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                 "translation cache hit",
                 json!({
                     "provider": cached.provider_id,
-                    "promptProfile": cached.prompt_profile,
                 }),
             );
             cached
@@ -337,7 +332,6 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
                         json!({
                             "error": error_text,
                             "provider": snapshot.ai_provider,
-                            "promptProfile": snapshot.prompt_profile,
                         }),
                     );
                     ai_retry_after = Some(Instant::now() + AI_RETRY_COOLDOWN);
@@ -376,7 +370,6 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
         let provider_snapshot = state.set_provider_stack(
             recognized.provider_id,
             translation.provider_id.clone(),
-            translation.prompt_profile.clone(),
         );
         emit_snapshot(&app, &provider_snapshot);
 
@@ -387,7 +380,6 @@ pub async fn pipeline_loop(app: AppHandle, state: SharedState, token: u64) -> Re
             OverlayFrameContext {
                 detected_source: Some(translation.detected_source.clone()),
                 provider: translation.provider_id.clone(),
-                prompt_profile: translation.prompt_profile.clone(),
                 ..base_context.clone()
             },
             source_units.clone(),
@@ -571,7 +563,6 @@ mod tests {
         let response = AiTranslationResponse {
             provider_id: "ollama".to_string(),
             model: "qwen3:8b".to_string(),
-            prompt_profile: "translation.ui_overlay.default".to_string(),
             detected_source: "en-US".to_string(),
             items: vec![AiTranslationItem {
                 id: "7:2/span-0".to_string(),
@@ -714,7 +705,6 @@ mod tests {
             endpoint: "http://127.0.0.1:11434".to_string(),
             provider_id: "ollama".to_string(),
             model: "qwen3:8b".to_string(),
-            prompt_profile: "translation.ui_overlay.default".to_string(),
             source_language: "en-US".to_string(),
             target_language: "zh-TW".to_string(),
             expected_item_count: 1,

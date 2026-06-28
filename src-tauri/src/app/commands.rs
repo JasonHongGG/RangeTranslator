@@ -50,7 +50,6 @@ pub async fn run_prompt_benchmark(
         &snapshot.endpoint,
         &snapshot.model,
         &snapshot.ai_provider,
-        &snapshot.prompt_profile,
     )
     .await
 }
@@ -318,8 +317,7 @@ pub async fn start_pipeline(
     let snapshot_before = state.snapshot();
     let needs_runtime_query = snapshot_before.ocr_provider.is_empty()
         || (snapshot_before.ai_translation_enabled
-            && (snapshot_before.ai_provider.is_empty()
-                || snapshot_before.prompt_profile.is_empty()));
+            && snapshot_before.ai_provider.is_empty());
 
     if needs_runtime_query {
         let capabilities = runtime_gateway().query_capabilities().await?;
@@ -562,7 +560,6 @@ fn sync_runtime_defaults(
     let snapshot = state.snapshot();
     let current_ocr_provider = snapshot.ocr_provider.clone();
     let current_ai_provider = snapshot.ai_provider.clone();
-    let current_prompt_profile = snapshot.prompt_profile.clone();
 
     let ocr_provider = if current_ocr_provider.is_empty() {
         capabilities
@@ -582,23 +579,13 @@ fn sync_runtime_defaults(
         current_ai_provider.clone()
     };
 
-    let prompt_profile = if current_prompt_profile.is_empty() {
-        capabilities
-            .default_prompt_profile_id
-            .clone()
-            .unwrap_or_default()
-    } else {
-        current_prompt_profile.clone()
-    };
-
     if ocr_provider == current_ocr_provider
         && ai_provider == current_ai_provider
-        && prompt_profile == current_prompt_profile
     {
         return snapshot;
     }
 
-    let next_snapshot = state.set_provider_stack(ocr_provider, ai_provider, prompt_profile);
+    let next_snapshot = state.set_provider_stack(ocr_provider, ai_provider);
     emit_snapshot(app, &next_snapshot);
     next_snapshot
 }

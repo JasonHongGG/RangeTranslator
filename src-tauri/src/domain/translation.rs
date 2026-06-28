@@ -103,7 +103,6 @@ pub fn build_translation_cache_key(request: &AiTranslationRequest) -> Result<Str
         "endpoint": request.endpoint,
         "providerId": request.provider_id,
         "model": request.model,
-        "promptProfile": request.prompt_profile,
         "sourceLanguage": request.source_language,
         "targetLanguage": request.target_language,
         "expectedItemCount": request.expected_item_count,

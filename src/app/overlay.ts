@@ -47,7 +47,6 @@ export function mergeTranslationPartial(
           unchanged: false,
           visibleLayer: partial.visibleLayer,
           provider: partial.provider,
-          promptProfile: partial.promptProfile,
           sourceUnits: [],
           translationUnits: [],
         }
@@ -102,7 +101,6 @@ export function mergeTranslationPartial(
     unchanged: false,
     visibleLayer: (partial.visibleLayer || baseline.visibleLayer) as VisibleLayer,
     provider: partial.provider || baseline.provider,
-    promptProfile: partial.promptProfile || baseline.promptProfile,
     sourceUnits,
     translationUnits,
   }

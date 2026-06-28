@@ -254,12 +254,10 @@ impl SharedState {
         &self,
         ocr_provider: String,
         ai_provider: String,
-        prompt_profile: String,
     ) -> RuntimeSnapshot {
         let mut inner = self.inner.lock();
         inner.snapshot.ocr_provider = ocr_provider;
         inner.snapshot.ai_provider = ai_provider;
-        inner.snapshot.prompt_profile = prompt_profile;
         inner.snapshot.clone()
     }
 
@@ -318,7 +316,6 @@ mod tests {
         state.set_provider_stack(
             "paddleocr".to_string(),
             "ollama".to_string(),
-            "translation.ui_overlay.default".to_string(),
         );
 
         let snapshot = state.set_translation(TranslationPayload {
@@ -326,12 +323,10 @@ mod tests {
             frame_id: "7:1".to_string(),
             visible_layer: VisibleLayer::Translation,
             provider: "paddleocr".to_string(),
-            prompt_profile: String::new(),
             ..TranslationPayload::default()
         });
 
         assert_eq!(snapshot.ocr_provider, "paddleocr");
         assert_eq!(snapshot.ai_provider, "ollama");
-        assert_eq!(snapshot.prompt_profile, "translation.ui_overlay.default");
     }
 }

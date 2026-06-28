@@ -78,7 +78,6 @@ export type TranslationPayload = {
   unchanged: boolean
   visibleLayer: VisibleLayer
   provider: string
-  promptProfile: string
   sourceUnits: OverlaySourceUnit[]
   translationUnits: OverlayTranslationUnit[]
 }
@@ -94,7 +93,6 @@ export type TranslationPartialPayload = {
   capturedAt: string | null
   visibleLayer: VisibleLayer
   provider: string
-  promptProfile: string
   stage: PartialUpdateStage
   complete: boolean
   sourceUnits: OverlaySourceUnit[]
@@ -109,26 +107,17 @@ export type ProviderDescriptor = {
   detail: string | null
 }
 
-export type PromptProfileDescriptor = {
-  id: string
-  label: string
-  version: string
-  task: string
-  providerFamily: string
 }
 
 export type RuntimeCapabilities = {
   ocrProviders: ProviderDescriptor[]
   aiProviders: ProviderDescriptor[]
-  promptProfiles: PromptProfileDescriptor[]
   defaultOcrProviderId: string | null
   defaultAiProviderId: string | null
-  defaultPromptProfileId: string | null
 }
 
 export type BenchmarkCaseResult = {
   caseId: string
-  promptProfile: string
   providerId: string
   expectedTranslations: string[]
   actualTranslations: string[]
@@ -139,7 +128,6 @@ export type BenchmarkCaseResult = {
 export type BenchmarkReport = {
   suiteId: string
   providerId: string
-  promptProfile: string
   caseCount: number
   averageExactMatchScore: number
   averageLatencyMs: number
@@ -154,7 +142,6 @@ export type RuntimeSnapshot = {
   targetLanguage: string
   ocrProvider: string
   aiProvider: string
-  promptProfile: string
   aiTranslationEnabled: boolean
   panelPinned: boolean
   debugScreenshotMode: boolean

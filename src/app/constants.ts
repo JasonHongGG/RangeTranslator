@@ -8,7 +8,6 @@ export const PREVIEW_SNAPSHOT: RuntimeSnapshot = {
   targetLanguage: 'zh-TW',
   ocrProvider: 'paddleocr',
   aiProvider: 'ollama',
-  promptProfile: 'translation.ui_overlay.default',
   aiTranslationEnabled: true,
   panelPinned: true,
   debugScreenshotMode: false,
@@ -37,7 +36,6 @@ export const PREVIEW_TRANSLATION: TranslationPayload = {
   unchanged: false,
   visibleLayer: 'translation',
   provider: 'ollama',
-  promptProfile: 'translation.ui_overlay.default',
   sourceUnits: [
     {
       id: 'preview-1',

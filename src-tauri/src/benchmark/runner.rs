@@ -14,7 +14,6 @@ pub async fn run_default_prompt_benchmark(
     endpoint: &str,
     model: &str,
     provider_id: &str,
-    prompt_profile: &str,
 ) -> Result<BenchmarkReport, String> {
     let suite = load_default_benchmark_suite().map_err(|error| error.to_string())?;
     let mut total_score = 0.0_f32;
@@ -22,10 +21,6 @@ pub async fn run_default_prompt_benchmark(
     let mut cases = Vec::new();
 
     for case in &suite.cases {
-        let case_prompt_profile = case
-            .prompt_profile
-            .clone()
-            .unwrap_or_else(|| prompt_profile.to_string());
         let items = case
             .items
             .iter()
@@ -55,7 +50,6 @@ pub async fn run_default_prompt_benchmark(
                     endpoint: endpoint.to_string(),
                     provider_id: provider_id.to_string(),
                     model: model.to_string(),
-                    prompt_profile: case_prompt_profile.clone(),
                     source_language: case.source_language.clone(),
                     target_language: case.target_language.clone(),
                     expected_item_count: items.len(),
@@ -78,7 +72,6 @@ pub async fn run_default_prompt_benchmark(
         total_latency_ms += latency_ms;
         cases.push(BenchmarkCaseResult {
             case_id: case.id.clone(),
-            prompt_profile: case_prompt_profile,
             provider_id: response.provider_id.clone(),
             expected_translations,
             actual_translations,
@@ -91,7 +84,6 @@ pub async fn run_default_prompt_benchmark(
     Ok(BenchmarkReport {
         suite_id: suite.id,
         provider_id: provider_id.to_string(),
-        prompt_profile: prompt_profile.to_string(),
         case_count,
         average_exact_match_score: if case_count == 0 {
             0.0

@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import site
 import sysconfig
+import logging
+import warnings
 from pathlib import Path
 
 
@@ -13,6 +15,29 @@ def configure_process_environment() -> None:
         _add_dll_directory(directory)
 
     os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+    
+    # 關閉 Paddle C++ 核心日誌，減少控制台噪音
+    os.environ.setdefault("GLOG_minloglevel", "2")
+    os.environ.setdefault("GLOG_v", "0")
+    
+    # 阻斷 Paddle JIT C++ 編譯，強制使用純 Python 替代方案，解決啟動卡頓問題
+    _block_paddle_jit_compilation()
+
+
+def _block_paddle_jit_compilation() -> None:
+    """Monkey-patch paddle.utils.cpp_extension to raise an error and abort compilation immediately"""
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            import paddle.utils.cpp_extension
+            
+        def _mock_setup(*args, **kwargs):
+            logging.debug("Paddle JIT compilation blocked by RangeTranslator to improve startup speed.")
+            raise ImportError("JIT compilation intentionally blocked to force Python fallback")
+            
+        paddle.utils.cpp_extension.setup = _mock_setup
+    except ImportError:
+        pass
 
 
 def _candidate_nvidia_bin_dirs() -> list[Path]:
